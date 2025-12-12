@@ -4,7 +4,7 @@ from PIL import Image
 import edge_tts
 import asyncio
 import io
-import re  # Temizlik robotumuz (Regex kütüphanesi)
+import re
 
 # ==========================================
 # 1. AYARLAR & TASARIM
@@ -49,6 +49,8 @@ if "messages" not in st.session_state: st.session_state.messages = []
 if "chat_session" not in st.session_state: st.session_state.chat_session = None
 if 'kamera_acik' not in st.session_state: st.session_state.kamera_acik = False
 if 'ses_aktif' not in st.session_state: st.session_state.ses_aktif = True
+# Varsayılan ses (Erkek: Ahmet, Kadın: Emel)
+if 'secilen_ses' not in st.session_state: st.session_state.secilen_ses = "tr-TR-AhmetNeural"
 
 def sifirla():
     st.session_state.messages = []
@@ -57,13 +59,8 @@ def sifirla():
 
 # --- TEMİZLİK ROBOTU (TTS İÇİN) ---
 def metni_temizle_tts_icin(text):
-    # 1. Markdown başlık işaretlerini (#) ve kalınlık işaretlerini (*) kaldır
     text = text.replace("#", "").replace("*", "")
-    
-    # 2. Emojileri temizle (Sadece Harf, Rakam, Noktalama ve Türkçe karakter kalsın)
-    # Bu regex; a-z, 0-9, Türkçe karakterler ve temel noktalama dışındaki her şeyi siler.
     temiz_text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞIÖŞÜ\s\.,!\?\-':;]", "", text)
-    
     return temiz_text.strip()
 
 # --- SESİ YAZIYA ÇEVİR (STT) ---
@@ -78,9 +75,9 @@ def sesi_yaziya_cevir(audio_bytes):
     except Exception as e:
         return None
 
-# --- YAZIYI GERÇEKÇİ SESE ÇEVİR (EDGE TTS) ---
-async def seslendir_async(metin, ses="tr-TR-AhmetNeural"):
-    communicate = edge_tts.Communicate(metin, ses)
+# --- YAZIYI SESE ÇEVİR (EDGE TTS - SEÇMELİ) ---
+async def seslendir_async(metin, ses_id):
+    communicate = edge_tts.Communicate(metin, ses_id)
     mp3_fp = io.BytesIO()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
@@ -90,12 +87,13 @@ async def seslendir_async(metin, ses="tr-TR-AhmetNeural"):
 
 def metni_oku(metin):
     try:
-        # Önce metni temizle (Emoji ve işaretlerden arındır)
         temiz_metin = metni_temizle_tts_icin(metin)
+        # Session state'teki seçili sesi kullanıyoruz
+        ses_id = st.session_state.secilen_ses
         
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        ses_dosyasi = loop.run_until_complete(seslendir_async(temiz_metin))
+        ses_dosyasi = loop.run_until_complete(seslendir_async(temiz_metin, ses_id))
         return ses_dosyasi
     except Exception as e:
         st.error(f"Ses hatası: {e}")
@@ -109,13 +107,28 @@ st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;
 
 st.info("👇 Önce kendini tanıt, sonra sorunu yükle:")
 
-col_isim, col_sinif = st.columns(2)
-with col_isim:
+# İsim ve Sınıf Alanı
+col1, col2 = st.columns(2)
+with col1:
     isim = st.text_input("Adın ne?", placeholder="Örn: Ali")
-with col_sinif:
+with col2:
     sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
 
-st.session_state.ses_aktif = st.toggle("🔊 Kafadar Sesli Yanıt Versin", value=True)
+# --- YENİ EKLENEN SES AYARLARI ---
+with st.expander("⚙️ Kafadar'ın Ayarları", expanded=True):
+    c_ses1, c_ses2 = st.columns(2)
+    with c_ses1:
+        st.session_state.ses_aktif = st.toggle("🔊 Sesli Yanıt", value=True)
+    with c_ses2:
+        # Ses Seçimi Dropdown
+        ses_tercihi = st.selectbox("🗣️ Kafadar'ın Sesi", ["Erkek (Ahmet)", "Kadın (Emel)"])
+        
+        # Seçime göre ID atama (Microsoft Edge Ses ID'leri)
+        if ses_tercihi == "Erkek (Ahmet)":
+            st.session_state.secilen_ses = "tr-TR-AhmetNeural"
+        else:
+            st.session_state.secilen_ses = "tr-TR-EmelNeural"
+
 st.markdown("---")
 
 # ==========================================
@@ -173,7 +186,6 @@ if not st.session_state.chat_session:
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                     
                     if st.session_state.ses_aktif:
-                        # Temizlenmiş sesi oluştur
                         ses = metni_oku(response.text)
                         if ses: st.session_state.messages.append({"role": "audio", "content": ses})
                     
@@ -222,7 +234,6 @@ else:
                     st.markdown(response.text)
                 
                 if st.session_state.ses_aktif:
-                    # Temizlenmiş ses (Emojisiz, Başlıksız)
                     ses_verisi = metni_oku(response.text)
                     if ses_verisi:
                         st.audio(ses_verisi, format="audio/mp3", autoplay=True)
