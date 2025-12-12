@@ -76,7 +76,7 @@ if uploaded_image:
         else:
             with st.spinner("Kafadar inceliyor... 🧠"):
                 try:
-                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    model = genai.GenerativeModel("gemini-flash-latest")
                     
                     system_prompt = f"""
                     Senin adın 'Kafadar'. Sen öğrencilerin en sevdiği, esprili, sabırlı ve zeki çalışma arkadaşısın.
