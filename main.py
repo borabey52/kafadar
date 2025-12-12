@@ -55,10 +55,21 @@ def sifirla():
     st.session_state.chat_session = None
     st.session_state.kamera_acik = False
 
-# --- TEMİZLİK ROBOTU ---
+# --- GELİŞMİŞ TEMİZLİK ROBOTU ---
 def metni_temizle_tts_icin(text):
+    # 1. Telaffuz Düzeltmeleri (ÖZEL AYAR)
+    # "Cevap" kelimesini "Yanıt" ile değiştiriyoruz ki düzgün okusun.
+    # "Cevab" kökünü de ekledik ki "Cevabı" -> "Yanıtı" olabilsin.
+    text = text.replace("Cevap", "Yanıt").replace("cevap", "yanıt")
+    text = text.replace("Cevab", "Yanıt").replace("cevab", "yanıt")
+    
+    # 2. Markdown İşaretlerini Temizle
     text = text.replace("#", "").replace("*", "")
+    
+    # 3. Emoji ve Garip Karakterleri Sil
+    # Sadece harfler, rakamlar ve temel noktalama işaretleri kalır.
     temiz_text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞIÖŞÜ\s\.,!\?\-':;]", "", text)
+    
     return temiz_text.strip()
 
 # --- SESİ YAZIYA ÇEVİR (STT) ---
@@ -73,8 +84,7 @@ def sesi_yaziya_cevir(audio_bytes):
     except Exception as e:
         return None
 
-# --- YAZIYI SESE ÇEVİR (EDGE TTS) ---
-# Burada "tr-TR-EmelNeural" (Kadın Sesi) sabitlendi.
+# --- YAZIYI SESE ÇEVİR (EDGE TTS - Kadın Sesi) ---
 async def seslendir_async(metin, ses="tr-TR-EmelNeural"):
     communicate = edge_tts.Communicate(metin, ses)
     mp3_fp = io.BytesIO()
@@ -86,7 +96,9 @@ async def seslendir_async(metin, ses="tr-TR-EmelNeural"):
 
 def metni_oku(metin):
     try:
+        # Önce metni temizle (Cevap -> Yanıt değişimi burada yapılıyor)
         temiz_metin = metni_temizle_tts_icin(metin)
+        
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         ses_dosyasi = loop.run_until_complete(seslendir_async(temiz_metin))
@@ -103,14 +115,12 @@ st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;
 
 st.info("👇 Önce kendini tanıt, sonra sorunu yükle:")
 
-# İsim ve Sınıf Alanı
 col1, col2 = st.columns(2)
 with col1:
     isim = st.text_input("Adın ne?", placeholder="Örn: Ali")
 with col2:
     sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
 
-# --- AYARLAR (Sadece Ses Aç/Kapa Kaldı) ---
 with st.expander("⚙️ Ses Ayarı", expanded=False):
     st.session_state.ses_aktif = st.toggle("🔊 Kafadar Sesli Konuşsun", value=True)
 
