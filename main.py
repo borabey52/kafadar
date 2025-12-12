@@ -123,7 +123,7 @@ def metni_oku(metin):
 # 4. ARAYÜZ
 # ==========================================
 st.title("🤖 Kafadar")
-st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Senin Zeki Çalışma Arkadaşın</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Yeni Nesil Öğrenci Koçu</h3>", unsafe_allow_html=True)
 
 st.info("👇 Önce kendini tanıt, sonra sorunu yükle:")
 
