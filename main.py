@@ -97,7 +97,7 @@ def metni_temizle_tts_icin(text):
 
 def sesi_yaziya_cevir(audio_bytes):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-flash-latest")
         response = model.generate_content([
             "Söylenenleri aynen yaz.",
             {"mime_type": "audio/wav", "data": audio_bytes}
@@ -183,7 +183,7 @@ if not st.session_state.chat_session:
                         ODAK KURALI: Ders dışı sohbete girme.
                         TONU: Samimi, emojili, motive edici. {isim} diye hitap et.
                         """
-                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        model = genai.GenerativeModel("gemini-flash-latest")
                         st.session_state.chat_session = model.start_chat(
                             history=[{"role": "user", "parts": [system_prompt, compressed_img]}]
                         )
