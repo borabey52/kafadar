@@ -104,7 +104,7 @@ if not st.session_state.chat_session:
             else:
                 with st.spinner("Kafadar hazırlanıyor..."):
                     # Model Ayarları
-                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    model = genai.GenerativeModel("gemini-flash-latest")
                     
                     system_prompt = f"""
                     Senin adın 'Kafadar'. Sen {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
