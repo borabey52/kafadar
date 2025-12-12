@@ -4,6 +4,7 @@ from PIL import Image
 import edge_tts
 import asyncio
 import io
+import re  # Temizlik robotumuz (Regex kütüphanesi)
 
 # ==========================================
 # 1. AYARLAR & TASARIM
@@ -15,10 +16,8 @@ st.markdown("""
     .stApp { background-color: #fcfdfd; }
     h1 { color: #2E86C1; font-family: 'Comic Sans MS', sans-serif; text-align: center; }
     
-    /* Mesaj Baloncukları */
     .stChatMessage { border-radius: 10px; }
     
-    /* Buton Tasarımı */
     .stButton>button {
         background-color: #F4D03F; color: #17202A; border-radius: 15px;
         font-weight: bold; border: none; padding: 12px 24px; transition: all 0.3s;
@@ -28,12 +27,9 @@ st.markdown("""
         background-color: #F1C40F; transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
     
-    /* Input alanlarını belirginleştir */
     [data-testid="stTextInput"], [data-testid="stSelectbox"] {
         border: 2px solid #EAECEE; border-radius: 10px;
     }
-    
-    /* Ses Kaydedici Düzeni */
     [data-testid="stAudioInput"] { margin-top: 10px; }
     </style>
 """, unsafe_allow_html=True)
@@ -59,10 +55,21 @@ def sifirla():
     st.session_state.chat_session = None
     st.session_state.kamera_acik = False
 
+# --- TEMİZLİK ROBOTU (TTS İÇİN) ---
+def metni_temizle_tts_icin(text):
+    # 1. Markdown başlık işaretlerini (#) ve kalınlık işaretlerini (*) kaldır
+    text = text.replace("#", "").replace("*", "")
+    
+    # 2. Emojileri temizle (Sadece Harf, Rakam, Noktalama ve Türkçe karakter kalsın)
+    # Bu regex; a-z, 0-9, Türkçe karakterler ve temel noktalama dışındaki her şeyi siler.
+    temiz_text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞIÖŞÜ\s\.,!\?\-':;]", "", text)
+    
+    return temiz_text.strip()
+
 # --- SESİ YAZIYA ÇEVİR (STT) ---
 def sesi_yaziya_cevir(audio_bytes):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-flash-latest")
         response = model.generate_content([
             "Bu ses kaydında söylenenleri kelimesi kelimesine aynen yaz. Ekstra yorum yapma.",
             {"mime_type": "audio/wav", "data": audio_bytes}
@@ -74,7 +81,6 @@ def sesi_yaziya_cevir(audio_bytes):
 # --- YAZIYI GERÇEKÇİ SESE ÇEVİR (EDGE TTS) ---
 async def seslendir_async(metin, ses="tr-TR-AhmetNeural"):
     communicate = edge_tts.Communicate(metin, ses)
-    # Sesi hafızada (RAM) tutmak için BytesIO kullanıyoruz
     mp3_fp = io.BytesIO()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
@@ -84,17 +90,19 @@ async def seslendir_async(metin, ses="tr-TR-AhmetNeural"):
 
 def metni_oku(metin):
     try:
-        # Async fonksiyonu Streamlit içinde çalıştırmak için loop kuruyoruz
+        # Önce metni temizle (Emoji ve işaretlerden arındır)
+        temiz_metin = metni_temizle_tts_icin(metin)
+        
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        ses_dosyasi = loop.run_until_complete(seslendir_async(metin))
+        ses_dosyasi = loop.run_until_complete(seslendir_async(temiz_metin))
         return ses_dosyasi
     except Exception as e:
         st.error(f"Ses hatası: {e}")
         return None
 
 # ==========================================
-# 3. ARAYÜZ - ÜST KISIM
+# 3. ARAYÜZ
 # ==========================================
 st.title("🤖 Kafadar")
 st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Senin Zeki Çalışma Arkadaşın</h3>", unsafe_allow_html=True)
@@ -108,14 +116,12 @@ with col_sinif:
     sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
 
 st.session_state.ses_aktif = st.toggle("🔊 Kafadar Sesli Yanıt Versin", value=True)
-
 st.markdown("---")
 
 # ==========================================
-# 4. FOTOĞRAF YÜKLEME VE BAŞLATMA
+# 4. FOTOĞRAF VE BAŞLATMA
 # ==========================================
 if not st.session_state.chat_session:
-    
     tab1, tab2 = st.tabs(["📂 Dosyadan Yükle", "📸 Kamerayı Kullan"])
     uploaded_image = None
     
@@ -133,15 +139,14 @@ if not st.session_state.chat_session:
             if kamera_img: uploaded_image = Image.open(kamera_img)
 
     if uploaded_image:
-        st.success("✅ Resim alındı! Şimdi başlatabilirsin.")
+        st.success("✅ Resim alındı! Başlatabilirsin.")
         st.image(uploaded_image, width=200, caption="Seçilen Soru")
         
         if st.button("🚀 KAFADAR İNCELE VE SOHBETİ BAŞLAT", type="primary"):
             if not isim:
-                st.warning("⚠️ Lütfen yukarıya adını yazar mısın?")
+                st.warning("⚠️ Lütfen adını yaz.")
             else:
                 with st.spinner("Kafadar hazırlanıyor..."):
-                    # MODEL: gemini-flash-latest
                     model = genai.GenerativeModel("gemini-flash-latest")
                     
                     system_prompt = f"""
@@ -153,7 +158,7 @@ if not st.session_state.chat_session:
                     3. Soru çözülmüşse: Kontrol et, yanlışsa ipucu ver.
                     
                     ODAK KURALI:
-                    - Ders dışı sohbete (oyun, maç vb.) girme, nazikçe derse döndür.
+                    - Ders dışı sohbete girme, nazikçe derse döndür.
                     
                     TONU:
                     - Samimi, emojili, motive edici.
@@ -165,20 +170,17 @@ if not st.session_state.chat_session:
                     )
                     
                     response = st.session_state.chat_session.send_message("Hadi incele.")
-                    
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                     
                     if st.session_state.ses_aktif:
-                        # Seslendirme için markdown temizliği
-                        temiz_metin = response.text.replace("*", "").replace("#", "")
-                        ses = metni_oku(temiz_metin)
-                        if ses:
-                            st.session_state.messages.append({"role": "audio", "content": ses})
+                        # Temizlenmiş sesi oluştur
+                        ses = metni_oku(response.text)
+                        if ses: st.session_state.messages.append({"role": "audio", "content": ses})
                     
                     st.rerun()
 
 # ==========================================
-# 5. SOHBET EKRANI (SES & METİN)
+# 5. SOHBET DÖNGÜSÜ
 # ==========================================
 else:
     col_reset, col_dummy = st.columns([1, 2])
@@ -220,12 +222,11 @@ else:
                     st.markdown(response.text)
                 
                 if st.session_state.ses_aktif:
-                    temiz_metin = response.text.replace("*", "").replace("#", "")
-                    # Async seslendirme çağrısı
-                    ses_verisi = metni_oku(temiz_metin)
+                    # Temizlenmiş ses (Emojisiz, Başlıksız)
+                    ses_verisi = metni_oku(response.text)
                     if ses_verisi:
                         st.audio(ses_verisi, format="audio/mp3", autoplay=True)
                         st.session_state.messages.append({"role": "audio", "content": ses_verisi})
                         
             except Exception as e:
-                st.error("Bağlantı hatası. Lütfen sayfayı yenile.")
+                st.error("Bağlantı hatası.")
