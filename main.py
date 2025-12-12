@@ -5,6 +5,8 @@ import edge_tts
 import asyncio
 import io
 import re
+import random
+import time
 
 # ==========================================
 # 1. AYARLAR & TASARIM
@@ -15,9 +17,7 @@ st.markdown("""
     <style>
     .stApp { background-color: #fcfdfd; }
     h1 { color: #2E86C1; font-family: 'Comic Sans MS', sans-serif; text-align: center; }
-    
     .stChatMessage { border-radius: 10px; }
-    
     .stButton>button {
         background-color: #F4D03F; color: #17202A; border-radius: 15px;
         font-weight: bold; border: none; padding: 12px 24px; transition: all 0.3s;
@@ -26,24 +26,47 @@ st.markdown("""
     .stButton>button:hover {
         background-color: #F1C40F; transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
-    
-    [data-testid="stTextInput"], [data-testid="stSelectbox"] {
-        border: 2px solid #EAECEE; border-radius: 10px;
-    }
+    [data-testid="stTextInput"], [data-testid="stSelectbox"] { border: 2px solid #EAECEE; border-radius: 10px; }
     [data-testid="stAudioInput"] { margin-top: 10px; }
+    
+    /* Footer Tasarımı */
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #fcfdfd;
+        color: #888;
+        text-align: center;
+        font-size: 12px;
+        padding: 10px;
+        border-top: 1px solid #eee;
+        z-index: 99;
+    }
+    /* Chat input footer'ın altında kalmasın diye padding */
+    .block-container {
+        padding-bottom: 60px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-if "GOOGLE_API_KEY" in st.secrets:
-    api_key = st.secrets["GOOGLE_API_KEY"]
-else:
-    st.error("🔑 API Anahtarı Eksik!")
+# ==========================================
+# 2. ÇOKLU API ANAHTARI YÖNETİMİ
+# ==========================================
+def get_api_keys():
+    keys = [v for k, v in st.secrets.items() if "GOOGLE_API_KEY" in k]
+    if not keys and "GOOGLE_API_KEY" in st.secrets:
+        keys.append(st.secrets["GOOGLE_API_KEY"])
+    return keys
+
+API_KEYS = get_api_keys()
+
+if not API_KEYS:
+    st.error("🚨 Hiçbir API Anahtarı bulunamadı! Lütfen secrets ayarlarını kontrol et.")
     st.stop()
 
-genai.configure(api_key=api_key)
-
 # ==========================================
-# 2. HAFIZA VE FONKSİYONLAR
+# 3. HAFIZA VE FONKSİYONLAR
 # ==========================================
 if "messages" not in st.session_state: st.session_state.messages = []
 if "chat_session" not in st.session_state: st.session_state.chat_session = None
@@ -55,36 +78,31 @@ def sifirla():
     st.session_state.chat_session = None
     st.session_state.kamera_acik = False
 
-# --- GELİŞMİŞ TEMİZLİK ROBOTU ---
+# --- KELİME DEĞİŞTİRME ROBOTU ---
 def metni_temizle_tts_icin(text):
-    # 1. Telaffuz Düzeltmeleri (ÖZEL AYAR)
-    # "Cevap" kelimesini "Yanıt" ile değiştiriyoruz ki düzgün okusun.
-    # "Cevab" kökünü de ekledik ki "Cevabı" -> "Yanıtı" olabilsin.
-    text = text.replace("Cevap", "Yanıt").replace("cevap", "yanıt")
-    text = text.replace("Cevab", "Yanıt").replace("cevab", "yanıt")
-    
-    # 2. Markdown İşaretlerini Temizle
+    text = re.sub(r'(?i)cevap', 'yanıt', text)
+    text = re.sub(r'(?i)cevab', 'yanıt', text)
     text = text.replace("#", "").replace("*", "")
-    
-    # 3. Emoji ve Garip Karakterleri Sil
-    # Sadece harfler, rakamlar ve temel noktalama işaretleri kalır.
     temiz_text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞIÖŞÜ\s\.,!\?\-':;]", "", text)
-    
     return temiz_text.strip()
 
 # --- SESİ YAZIYA ÇEVİR (STT) ---
 def sesi_yaziya_cevir(audio_bytes):
-    try:
-        model = genai.GenerativeModel("gemini-flash-latest")
-        response = model.generate_content([
-            "Bu ses kaydında söylenenleri kelimesi kelimesine aynen yaz. Ekstra yorum yapma.",
-            {"mime_type": "audio/wav", "data": audio_bytes}
-        ])
-        return response.text.strip()
-    except Exception as e:
-        return None
+    random.shuffle(API_KEYS)
+    for key in API_KEYS:
+        try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel("gemini-flash-latest")
+            response = model.generate_content([
+                "Bu ses kaydında söylenenleri kelimesi kelimesine aynen yaz. Ekstra yorum yapma.",
+                {"mime_type": "audio/wav", "data": audio_bytes}
+            ])
+            return response.text.strip()
+        except:
+            continue
+    return None
 
-# --- YAZIYI SESE ÇEVİR (EDGE TTS - Kadın Sesi) ---
+# --- YAZIYI SESE ÇEVİR (EDGE TTS - KADIN SESİ) ---
 async def seslendir_async(metin, ses="tr-TR-EmelNeural"):
     communicate = edge_tts.Communicate(metin, ses)
     mp3_fp = io.BytesIO()
@@ -96,19 +114,16 @@ async def seslendir_async(metin, ses="tr-TR-EmelNeural"):
 
 def metni_oku(metin):
     try:
-        # Önce metni temizle (Cevap -> Yanıt değişimi burada yapılıyor)
         temiz_metin = metni_temizle_tts_icin(metin)
-        
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         ses_dosyasi = loop.run_until_complete(seslendir_async(temiz_metin))
         return ses_dosyasi
     except Exception as e:
-        st.error(f"Ses hatası: {e}")
         return None
 
 # ==========================================
-# 3. ARAYÜZ
+# 4. ARAYÜZ BAŞLANGICI
 # ==========================================
 st.title("🤖 Kafadar")
 st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Senin Zeki Çalışma Arkadaşın</h3>", unsafe_allow_html=True)
@@ -127,7 +142,7 @@ with st.expander("⚙️ Ses Ayarı", expanded=False):
 st.markdown("---")
 
 # ==========================================
-# 4. FOTOĞRAF VE BAŞLATMA
+# 5. FOTOĞRAF VE BAŞLATMA MANTIĞI
 # ==========================================
 if not st.session_state.chat_session:
     tab1, tab2 = st.tabs(["📂 Dosyadan Yükle", "📸 Kamerayı Kullan"])
@@ -155,39 +170,47 @@ if not st.session_state.chat_session:
                 st.warning("⚠️ Lütfen adını yaz.")
             else:
                 with st.spinner("Kafadar hazırlanıyor..."):
-                    model = genai.GenerativeModel("gemini-flash-latest")
-                    
+                    # Prompt Hazırlığı
                     system_prompt = f"""
                     Senin adın 'Kafadar'. Sen {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
-                    
                     GÖREVLERİN:
                     1. Görüntüdeki dersi/konuyu anla.
                     2. Soru boşsa: Çözüm yolunu anlat ama CEVABI DİREKT VERME.
                     3. Soru çözülmüşse: Kontrol et, yanlışsa ipucu ver.
-                    
-                    ODAK KURALI:
-                    - Ders dışı sohbete girme, nazikçe derse döndür.
-                    
-                    TONU:
-                    - Samimi, emojili, motive edici.
-                    - {isim} diye hitap et.
+                    ODAK KURALI: Ders dışı sohbete girme.
+                    TONU: Samimi, emojili, motive edici. {isim} diye hitap et.
                     """
                     
-                    st.session_state.chat_session = model.start_chat(
-                        history=[{"role": "user", "parts": [system_prompt, uploaded_image]}]
-                    )
+                    # API Key Rotasyonu ile Bağlantı Denemesi
+                    basarili = False
+                    random.shuffle(API_KEYS)
                     
-                    response = st.session_state.chat_session.send_message("Hadi incele.")
-                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    for key in API_KEYS:
+                        try:
+                            genai.configure(api_key=key)
+                            model = genai.GenerativeModel("gemini-flash-latest")
+                            st.session_state.chat_session = model.start_chat(
+                                history=[{"role": "user", "parts": [system_prompt, uploaded_image]}]
+                            )
+                            response = st.session_state.chat_session.send_message("Hadi incele.")
+                            st.session_state.messages.append({"role": "assistant", "content": response.text})
+                            
+                            if st.session_state.ses_aktif:
+                                ses = metni_oku(response.text)
+                                if ses: st.session_state.messages.append({"role": "audio", "content": ses})
+                            
+                            basarili = True
+                            break 
+                        except:
+                            continue
                     
-                    if st.session_state.ses_aktif:
-                        ses = metni_oku(response.text)
-                        if ses: st.session_state.messages.append({"role": "audio", "content": ses})
-                    
-                    st.rerun()
+                    if not basarili:
+                        st.error("⚠️ Sistem yoğun, lütfen tekrar dene.")
+                    else:
+                        st.rerun()
 
 # ==========================================
-# 5. SOHBET DÖNGÜSÜ
+# 6. SOHBET DÖNGÜSÜ
 # ==========================================
 else:
     col_reset, col_dummy = st.columns([1, 2])
@@ -223,7 +246,6 @@ else:
         with st.spinner("Kafadar düşünüyor..."):
             try:
                 response = st.session_state.chat_session.send_message(user_input)
-                
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
                 with st.chat_message("assistant", avatar="🤖"):
                     st.markdown(response.text)
@@ -233,6 +255,14 @@ else:
                     if ses_verisi:
                         st.audio(ses_verisi, format="audio/mp3", autoplay=True)
                         st.session_state.messages.append({"role": "audio", "content": ses_verisi})
-                        
-            except Exception as e:
+            except:
                 st.error("Bağlantı hatası.")
+
+# ==========================================
+# 7. FOOTER (İMZA)
+# ==========================================
+st.markdown("""
+<div style="text-align: center; margin-top: 50px; padding: 20px; color: #999; font-size: 12px;">
+    © Kafadar uygulaması <b>Sinan Sayılır</b> tarafından geliştirilmiştir.
+</div>
+""", unsafe_allow_html=True)
