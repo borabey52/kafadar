@@ -1,7 +1,8 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
-from gtts import gTTS
+import edge_tts
+import asyncio
 import io
 
 # ==========================================
@@ -51,7 +52,7 @@ genai.configure(api_key=api_key)
 if "messages" not in st.session_state: st.session_state.messages = []
 if "chat_session" not in st.session_state: st.session_state.chat_session = None
 if 'kamera_acik' not in st.session_state: st.session_state.kamera_acik = False
-if 'ses_aktif' not in st.session_state: st.session_state.ses_aktif = True # Varsayılan olarak ses açık
+if 'ses_aktif' not in st.session_state: st.session_state.ses_aktif = True
 
 def sifirla():
     st.session_state.messages = []
@@ -61,8 +62,7 @@ def sifirla():
 # --- SESİ YAZIYA ÇEVİR (STT) ---
 def sesi_yaziya_cevir(audio_bytes):
     try:
-        # MODEL GÜNCELLENDİ: gemini-flash-latest
-        model = genai.GenerativeModel("gemini-flash-latest")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content([
             "Bu ses kaydında söylenenleri kelimesi kelimesine aynen yaz. Ekstra yorum yapma.",
             {"mime_type": "audio/wav", "data": audio_bytes}
@@ -71,15 +71,26 @@ def sesi_yaziya_cevir(audio_bytes):
     except Exception as e:
         return None
 
-# --- YAZIYI SESE ÇEVİR (TTS) ---
+# --- YAZIYI GERÇEKÇİ SESE ÇEVİR (EDGE TTS) ---
+async def seslendir_async(metin, ses="tr-TR-AhmetNeural"):
+    communicate = edge_tts.Communicate(metin, ses)
+    # Sesi hafızada (RAM) tutmak için BytesIO kullanıyoruz
+    mp3_fp = io.BytesIO()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            mp3_fp.write(chunk["data"])
+    mp3_fp.seek(0)
+    return mp3_fp
+
 def metni_oku(metin):
     try:
-        tts = gTTS(text=metin, lang='tr')
-        ses_dosyasi = io.BytesIO()
-        tts.write_to_fp(ses_dosyasi)
-        ses_dosyasi.seek(0)
+        # Async fonksiyonu Streamlit içinde çalıştırmak için loop kuruyoruz
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        ses_dosyasi = loop.run_until_complete(seslendir_async(metin))
         return ses_dosyasi
-    except:
+    except Exception as e:
+        st.error(f"Ses hatası: {e}")
         return None
 
 # ==========================================
@@ -96,7 +107,6 @@ with col_isim:
 with col_sinif:
     sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
 
-# Ses açma kapama ayarı
 st.session_state.ses_aktif = st.toggle("🔊 Kafadar Sesli Yanıt Versin", value=True)
 
 st.markdown("---")
@@ -131,7 +141,7 @@ if not st.session_state.chat_session:
                 st.warning("⚠️ Lütfen yukarıya adını yazar mısın?")
             else:
                 with st.spinner("Kafadar hazırlanıyor..."):
-                    # MODEL GÜNCELLENDİ: gemini-flash-latest
+                    # MODEL: gemini-flash-latest
                     model = genai.GenerativeModel("gemini-flash-latest")
                     
                     system_prompt = f"""
@@ -156,12 +166,12 @@ if not st.session_state.chat_session:
                     
                     response = st.session_state.chat_session.send_message("Hadi incele.")
                     
-                    # Mesajı kaydet
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                     
-                    # SESLENDİRME (Eğer aktifse)
                     if st.session_state.ses_aktif:
-                        ses = metni_oku(response.text.replace("*", "")) # Yıldızları temizle ki okurken takılmasın
+                        # Seslendirme için markdown temizliği
+                        temiz_metin = response.text.replace("*", "").replace("#", "")
+                        ses = metni_oku(temiz_metin)
                         if ses:
                             st.session_state.messages.append({"role": "audio", "content": ses})
                     
@@ -176,17 +186,13 @@ else:
         if st.button("🔄 Yeni Soru Sor", on_click=sifirla, type="secondary"):
             pass
 
-    # Eski mesajları göster
     for message in st.session_state.messages:
         if message["role"] == "audio":
-            # Ses dosyalarını oynatıcı olarak göster
             st.audio(message["content"], format="audio/mp3")
         else:
-            # Metin mesajlarını balon olarak göster
             with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
                 st.markdown(message["content"])
 
-    # KULLANICI GİRİŞİ (Yazı veya Ses)
     user_input = None
     
     text_input = st.chat_input("Anlamadığın yeri yaz...")
@@ -200,9 +206,7 @@ else:
             if transcribed_text: user_input = transcribed_text
             else: st.error("Ses anlaşılamadı.")
 
-    # CEVAP ÜRETME
     if user_input:
-        # Kullanıcı mesajını ekle
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_input)
@@ -211,15 +215,13 @@ else:
             try:
                 response = st.session_state.chat_session.send_message(user_input)
                 
-                # Metin cevabını ekle
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
                 with st.chat_message("assistant", avatar="🤖"):
                     st.markdown(response.text)
                 
-                # Sesli cevabı ekle (Otomatik Oynat)
                 if st.session_state.ses_aktif:
-                    # Okurken markdown işaretlerini (yıldızları vs) temizlemesi için basit temizlik
                     temiz_metin = response.text.replace("*", "").replace("#", "")
+                    # Async seslendirme çağrısı
                     ses_verisi = metni_oku(temiz_metin)
                     if ses_verisi:
                         st.audio(ses_verisi, format="audio/mp3", autoplay=True)
