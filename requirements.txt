@@ -1,4 +1,4 @@
-streamlit>=1.40.0
-google-generativeai
-Pillow
+streamlit
+openai>=1.0.0
+pillow
 edge-tts
