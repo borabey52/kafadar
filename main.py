@@ -53,7 +53,7 @@ if not API_KEYS:
     st.error("🚨 API Anahtarı bulunamadı!")
     st.stop()
 
-# --- HIZLANDIRICI: RESİM SIKIŞTIRMA ---
+# --- SADECE BU ÖZELLİĞİ ALDIK: RESİM SIKIŞTIRMA ---
 def compress_image(image):
     """
     Büyük resimleri 800px genişliğe küçültür.
@@ -88,7 +88,7 @@ def sesi_yaziya_cevir(audio_bytes):
     for key in API_KEYS:
         try:
             genai.configure(api_key=key)
-             # En hızlı model ismini sabitledik
+            model = genai.GenerativeModel("gemini-1.5-flash")
             response = model.generate_content([
                 "Söylenenleri aynen yaz.",
                 {"mime_type": "audio/wav", "data": audio_bytes}
@@ -137,7 +137,7 @@ with st.expander("⚙️ Ses Ayarı", expanded=False):
 st.markdown("---")
 
 # ==========================================
-# 5. BAŞLATMA VE OPTİMİZE ANALİZ
+# 5. BAŞLATMA (SIKIŞTIRMA EKLENDİ, STREAMING KALDIRILDI)
 # ==========================================
 if not st.session_state.chat_session:
     tab1, tab2 = st.tabs(["📂 Dosyadan Yükle", "📸 Kamerayı Kullan"])
@@ -157,72 +157,58 @@ if not st.session_state.chat_session:
 
     if uploaded_image:
         st.success("✅ Resim alındı!")
-        # Önizleme için küçük halini göster
         st.image(uploaded_image, width=200, caption="Seçilen Soru")
         
-        if st.button("🚀 KAFADAR İNCELE (HIZLI MOD)", type="primary"):
+        if st.button("🚀 KAFADAR İNCELE VE SOHBETİ BAŞLAT", type="primary"):
             if not isim:
                 st.warning("⚠️ Lütfen adını yaz.")
             else:
-                # --- HIZLANDIRMA 1: RESMİ KÜÇÜLT ---
-                compressed_img = compress_image(uploaded_image)
-                
-                # Placeholder: Cevap geldikçe buraya yazılacak
-                cevap_kutusu = st.empty()
-                full_text = ""
-
-                # Prompt
-                system_prompt = f"""
-                Senin adın 'Kafadar'. {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
-                GÖREV: Dersi anla. Boşsa çözüm yolunu anlat (cevabı verme). Çözülmüşse kontrol et.
-                ODAK: Kısa ve öz cevap ver. Uzatma.
-                TON: Samimi, emojili. {isim} diye hitap et.
-                """
-                
-                basarili = False
-                random.shuffle(API_KEYS)
-                
-                for key in API_KEYS:
-                    try:
-                        genai.configure(api_key=key)
-                        model = genai.GenerativeModel("gemini-flash-latest")
-                        
-                        st.session_state.chat_session = model.start_chat(
-                            history=[{"role": "user", "parts": [system_prompt, compressed_img]}]
-                        )
-                        
-                        # --- HIZLANDIRMA 2: STREAMING (AKIŞ) ---
-                        response_stream = st.session_state.chat_session.send_message("Hadi incele.", stream=True)
-                        
-                        # Kelime kelime ekrana basma döngüsü
-                        for chunk in response_stream:
-                            full_text += chunk.text
-                            # Canlı daktilo efekti
-                            cevap_kutusu.markdown(f"**Kafadar:** \n\n{full_text} ▌")
-                        
-                        # İmleci kaldır, son hali bas
-                        cevap_kutusu.markdown(f"**Kafadar:** \n\n{full_text}")
-                        
-                        # Hafızaya kaydet
-                        st.session_state.messages.append({"role": "assistant", "content": full_text})
-                        
-                        # Seslendirme (Metin bittikten sonra başlar)
-                        if st.session_state.ses_aktif:
-                            ses = metni_oku(full_text)
-                            if ses: st.session_state.messages.append({"role": "audio", "content": ses})
-                        
-                        basarili = True
-                        break 
-                    except Exception as e:
-                        continue
-                
-                if not basarili:
-                    st.error("⚠️ Bağlantı kurulamadı, tekrar dene.")
-                else:
-                    st.rerun()
+                with st.spinner("Kafadar hazırlanıyor..."):
+                    # --- HIZLANDIRMA: RESMİ KÜÇÜLT ---
+                    compressed_img = compress_image(uploaded_image)
+                    
+                    # Prompt (Eski düzen)
+                    system_prompt = f"""
+                    Senin adın 'Kafadar'. Sen {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
+                    GÖREVLERİN:
+                    1. Görüntüdeki dersi/konuyu anla.
+                    2. Soru boşsa: Çözüm yolunu anlat ama CEVABI DİREKT VERME.
+                    3. Soru çözülmüşse: Kontrol et, yanlışsa ipucu ver.
+                    ODAK KURALI: Ders dışı sohbete girme.
+                    TONU: Samimi, emojili, motive edici. {isim} diye hitap et.
+                    """
+                    
+                    basarili = False
+                    random.shuffle(API_KEYS)
+                    
+                    for key in API_KEYS:
+                        try:
+                            genai.configure(api_key=key)
+                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            
+                            st.session_state.chat_session = model.start_chat(
+                                history=[{"role": "user", "parts": [system_prompt, compressed_img]}]
+                            )
+                            # Normal gönderim (Streaming YOK)
+                            response = st.session_state.chat_session.send_message("Hadi incele.")
+                            st.session_state.messages.append({"role": "assistant", "content": response.text})
+                            
+                            if st.session_state.ses_aktif:
+                                ses = metni_oku(response.text)
+                                if ses: st.session_state.messages.append({"role": "audio", "content": ses})
+                            
+                            basarili = True
+                            break 
+                        except:
+                            continue
+                    
+                    if not basarili:
+                        st.error("⚠️ Sistem yoğun, lütfen tekrar dene.")
+                    else:
+                        st.rerun()
 
 # ==========================================
-# 6. SOHBET DÖNGÜSÜ (STREAMING DESTEKLİ)
+# 6. SOHBET DÖNGÜSÜ (NORMAL)
 # ==========================================
 else:
     col_reset, col_dummy = st.columns([1, 2])
@@ -230,7 +216,6 @@ else:
         if st.button("🔄 Yeni Soru Sor", on_click=sifirla, type="secondary"):
             pass
 
-    # Eski mesajları göster
     for message in st.session_state.messages:
         if message["role"] == "audio":
             st.audio(message["content"], format="audio/mp3")
@@ -255,23 +240,16 @@ else:
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_input)
 
-        # --- STREAMING SOHBET ---
-        with st.chat_message("assistant", avatar="🤖"):
-            message_placeholder = st.empty()
-            full_response = ""
-            
+        with st.spinner("Kafadar düşünüyor..."):
             try:
-                response_stream = st.session_state.chat_session.send_message(user_input, stream=True)
-                
-                for chunk in response_stream:
-                    full_response += chunk.text
-                    message_placeholder.markdown(full_response + "▌")
-                
-                message_placeholder.markdown(full_response)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                # Normal cevap (Streaming YOK)
+                response = st.session_state.chat_session.send_message(user_input)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+                with st.chat_message("assistant", avatar="🤖"):
+                    st.markdown(response.text)
                 
                 if st.session_state.ses_aktif:
-                    ses_verisi = metni_oku(full_response)
+                    ses_verisi = metni_oku(response.text)
                     if ses_verisi:
                         st.audio(ses_verisi, format="audio/mp3", autoplay=True)
                         st.session_state.messages.append({"role": "audio", "content": ses_verisi})
