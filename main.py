@@ -29,9 +29,24 @@ st.markdown("""
     [data-testid="stTextInput"], [data-testid="stSelectbox"] { border: 2px solid #EAECEE; border-radius: 10px; }
     [data-testid="stAudioInput"] { margin-top: 10px; }
     
-    /* Footer için alt boşluk */
+    /* --- FOOTER SABİTLEME --- */
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #fcfdfd; /* Arka plan rengi */
+        color: #888;
+        text-align: center;
+        font-size: 14px; /* İstenilen punto büyüklüğü */
+        padding: 15px;
+        border-top: 1px solid #eee;
+        z-index: 1000; /* Her şeyin üstünde dursun */
+    }
+    
+    /* Footer chat input'u kapatmasın diye sayfa altına boşluk */
     .block-container {
-        padding-bottom: 80px;
+        padding-bottom: 100px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -167,7 +182,7 @@ if not st.session_state.chat_session:
                     TONU: Samimi, emojili, motive edici. {isim} diye hitap et.
                     """
                     
-                    # API Key Rotasyonu ile Bağlantı Denemesi
+                    # API Key Rotasyonu
                     basarili = False
                     random.shuffle(API_KEYS)
                     
@@ -245,10 +260,11 @@ else:
                 st.error("Bağlantı hatası.")
 
 # ==========================================
-# 7. FOOTER (İMZA) - BÜYÜK PUNTO EKLENDİ
+# 7. FOOTER (SABİTLENMİŞ & BÜYÜK PUNTO)
 # ==========================================
+# Not: HTML class="footer" ekleyerek CSS'teki .footer stilini buna uyguladık.
 st.markdown("""
-<div style="text-align: center; margin-top: 50px; padding: 20px; color: #888; font-size: 14px;">
+<div class="footer">
     © Kafadar uygulaması <b>Sinan Sayılır</b> tarafından geliştirilmiştir.
 </div>
 """, unsafe_allow_html=True)
