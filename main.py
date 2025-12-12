@@ -29,23 +29,9 @@ st.markdown("""
     [data-testid="stTextInput"], [data-testid="stSelectbox"] { border: 2px solid #EAECEE; border-radius: 10px; }
     [data-testid="stAudioInput"] { margin-top: 10px; }
     
-    /* Footer Tasarımı */
-    .footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: #fcfdfd;
-        color: #888;
-        text-align: center;
-        font-size: 12px;
-        padding: 10px;
-        border-top: 1px solid #eee;
-        z-index: 99;
-    }
-    /* Chat input footer'ın altında kalmasın diye padding */
+    /* Footer için alt boşluk */
     .block-container {
-        padding-bottom: 60px;
+        padding-bottom: 80px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -259,10 +245,10 @@ else:
                 st.error("Bağlantı hatası.")
 
 # ==========================================
-# 7. FOOTER (İMZA)
+# 7. FOOTER (İMZA) - BÜYÜK PUNTO EKLENDİ
 # ==========================================
 st.markdown("""
-<div style="text-align: center; margin-top: 50px; padding: 20px; color: #999; font-size: 12px;">
+<div style="text-align: center; margin-top: 50px; padding: 20px; color: #888; font-size: 14px;">
     © Kafadar uygulaması <b>Sinan Sayılır</b> tarafından geliştirilmiştir.
 </div>
 """, unsafe_allow_html=True)
