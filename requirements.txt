@@ -1,4 +1,4 @@
 streamlit>=1.40.0
 google-generativeai
 Pillow
-gTTS
+edge-tts
