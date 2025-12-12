@@ -84,7 +84,7 @@ def metni_temizle_tts_icin(text):
 # Sesi Yazıya Çevirme
 def sesi_yaziya_cevir(audio_bytes):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-flash-latest")
         response = model.generate_content([
             "Söylenenleri aynen yaz.",
             {"mime_type": "audio/wav", "data": audio_bytes}
