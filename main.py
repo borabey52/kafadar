@@ -15,13 +15,19 @@ st.markdown("""
     /* Mesaj Baloncukları */
     .stChatMessage { border-radius: 10px; }
     
-    /* Buton Tasarımı */
+    /* Buton Tasarımı - Daha büyük ve dikkat çekici */
     .stButton>button {
-        background-color: #F4D03F; color: #17202A; border-radius: 20px;
-        font-weight: bold; border: none; padding: 10px 24px; transition: all 0.3s;
+        background-color: #F4D03F; color: #17202A; border-radius: 15px;
+        font-weight: bold; border: none; padding: 12px 24px; transition: all 0.3s;
+        width: 100%; /* Butonu genişlet */
     }
     .stButton>button:hover {
-        background-color: #F1C40F; transform: scale(1.05); box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        background-color: #F1C40F; transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    
+    /* Input alanlarını belirginleştir */
+    [data-testid="stTextInput"], [data-testid="stSelectbox"] {
+        border: 2px solid #EAECEE; border-radius: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -35,16 +41,10 @@ else:
 genai.configure(api_key=api_key)
 
 # ==========================================
-# 2. HAFIZA YÖNETİMİ (SESSION STATE)
+# 2. HAFIZA (SESSION STATE)
 # ==========================================
-# Sohbet geçmişini tutacak liste
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Chat oturum nesnesini tutacak (Gemini ile bağlantı)
-if "chat_session" not in st.session_state:
-    st.session_state.chat_session = None
-
+if "messages" not in st.session_state: st.session_state.messages = []
+if "chat_session" not in st.session_state: st.session_state.chat_session = None
 if 'kamera_acik' not in st.session_state: st.session_state.kamera_acik = False
 
 def sifirla():
@@ -53,38 +53,37 @@ def sifirla():
     st.session_state.kamera_acik = False
 
 # ==========================================
-# 3. ARAYÜZ - BAŞLIK
+# 3. ARAYÜZ - ÜST BİLGİ ALANI (GİZLEME YOK!)
 # ==========================================
 st.title("🤖 Kafadar")
 st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Senin Zeki Çalışma Arkadaşın</h3>", unsafe_allow_html=True)
 
-with st.expander("👤 Öğrenci Ayarları (Değiştirmek için tıkla)"):
-    c1, c2 = st.columns(2)
-    with c1:
-        isim = st.text_input("Adın ne?", placeholder="Örn: Ali")
-    with c2:
-        sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
+# Artık expander yok, direkt ekranda:
+st.info("👇 Önce kendini tanıt, sonra sorunu yükle:")
+
+col_isim, col_sinif = st.columns(2)
+with col_isim:
+    isim = st.text_input("Adın ne?", placeholder="Örn: Ali")
+with col_sinif:
+    sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
+
+st.markdown("---")
 
 # ==========================================
-# 4. FOTOĞRAF YÜKLEME (Sadece Sohbet Başlamadıysa Göster)
+# 4. FOTOĞRAF YÜKLEME VE BAŞLATMA
 # ==========================================
-uploaded_image = None
-
-# Eğer henüz bir sohbet başlamamışsa fotoğraf yükleme alanını göster
+# Eğer sohbet başlamadıysa yükleme ekranını göster
 if not st.session_state.chat_session:
-    if isim:
-        st.info(f"👋 Hadi {isim}, çözemediğin sorunun fotoğrafını yükle, sohbet edelim!")
-    else:
-        st.info("👋 Önce yukarıya adını yaz, sonra soru yükle!")
-
+    
     tab1, tab2 = st.tabs(["📂 Dosyadan Yükle", "📸 Kamerayı Kullan"])
+    uploaded_image = None
     
     with tab1:
         dosya = st.file_uploader("Galeriden Seç", type=["jpg", "png", "jpeg"])
         if dosya: uploaded_image = Image.open(dosya)
 
     with tab2:
-        if st.button("📸 Kamerayı Aç" if not st.session_state.kamera_acik else "Kamerayı Kapat", use_container_width=True):
+        if st.button("📸 Kamerayı Aç / Kapat", key="cam_toggle"):
             st.session_state.kamera_acik = not st.session_state.kamera_acik
             st.rerun()
 
@@ -92,75 +91,73 @@ if not st.session_state.chat_session:
             kamera_img = st.camera_input("Fotoğraf Çek", label_visibility="hidden")
             if kamera_img: uploaded_image = Image.open(kamera_img)
 
-    # Başlat Butonu
-    if uploaded_image and isim:
+    # --- KRİTİK DÜZELTME: BUTON MANTIĞI ---
+    # Resim varsa butonu GÖSTER (İsim olmasa bile buton görünsün)
+    if uploaded_image:
+        st.success("✅ Resim alındı! Şimdi başlatabilirsin.")
         st.image(uploaded_image, width=200, caption="Seçilen Soru")
-        if st.button("🚀 Sohbeti Başlat", type="primary", use_container_width=True):
-            with st.spinner("Kafadar hazırlanıyor..."):
-                # --- İLK KURULUM (PROMPT) ---
-                model = genai.GenerativeModel("gemini-flash-latest")
-                
-                system_prompt = f"""
-                Senin adın 'Kafadar'. Sen {sinif} öğrencisi {isim}'in en sevdiği çalışma arkadaşısın.
-                
-                GÖREVLERİN:
-                1. Görüntüdeki dersi ve konuyu anla.
-                2. Soru boşsa: Çözüm yolunu anlat ama cevabı direkt verme.
-                3. Soru çözülmüşse: Kontrol et, yanlışsa ipucu ver.
-                
-                ÖZEL KURAL (ODAK KONTROLÜ):
-                - Eğer öğrenci dersle ilgili bir şey sorarsa (Neden 3?, Yüklem neresi? vb.) sabırla açıkla.
-                - Eğer öğrenci KONU DIŞI bir şey sorarsa (Maç kaç kaç?, En sevdiğin renk ne?, Nasılsın? vb.):
-                  Esprili bir şekilde reddet ve nazikçe derse döndür.
-                  Örnek: "Canım şu an sadece bu soruyu düşünüyorum, hadi bitirelim sonra konuşuruz! 😉"
-                  Örnek: "Oyun kaçmıyor ama bu soru sınavda çıkabilir! Odaklanalım. 🚀"
-
-                TONU:
-                - Samimi, emojili ve kısa cümleler kur.
-                - {isim} diye hitap et.
-                """
-                
-                # Sohbeti başlatıyoruz ve geçmişe ekliyoruz
-                st.session_state.chat_session = model.start_chat(
-                    history=[
-                        {"role": "user", "parts": [system_prompt, uploaded_image]},
-                    ]
-                )
-                
-                # İlk cevabı al (Hoşgeldin mesajı ve analiz)
-                response = st.session_state.chat_session.send_message("Hadi incele ve yorumla.")
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-                st.rerun()
+        
+        # Analiz Butonu
+        if st.button("🚀 KAFADAR İNCELE VE SOHBETİ BAŞLAT", type="primary"):
+            if not isim:
+                st.warning("⚠️ Lütfen yukarıya adını yazar mısın? Sana isminle hitap etmek istiyorum.")
+            else:
+                with st.spinner("Kafadar hazırlanıyor..."):
+                    # Model Ayarları
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    
+                    system_prompt = f"""
+                    Senin adın 'Kafadar'. Sen {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
+                    
+                    GÖREVLERİN:
+                    1. Görüntüdeki dersi/konuyu anla.
+                    2. Soru boşsa: Çözüm yolunu anlat ama CEVABI DİREKT VERME.
+                    3. Soru çözülmüşse: Kontrol et, yanlışsa ipucu ver.
+                    
+                    ODAK KURALI:
+                    - Ders dışı sohbete (oyun, maç vb.) girme, nazikçe derse döndür.
+                    
+                    TONU:
+                    - Samimi, emojili, motive edici.
+                    - {isim} diye hitap et.
+                    """
+                    
+                    # Sohbeti Başlat
+                    st.session_state.chat_session = model.start_chat(
+                        history=[{"role": "user", "parts": [system_prompt, uploaded_image]}]
+                    )
+                    
+                    # İlk Mesajı Al
+                    response = st.session_state.chat_session.send_message("Hadi incele.")
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    st.rerun()
 
 # ==========================================
-# 5. SOHBET EKRANI
+# 5. SOHBET EKRANI (CHAT)
 # ==========================================
 else:
-    # "Yeni Soru" butonu (Sohbeti sıfırlamak için)
-    if st.button("🔄 Yeni Soru Sor / Bitir", on_click=sifirla, use_container_width=True):
-        pass
+    # Üstte "Yeni Soru" butonu
+    col_reset, col_dummy = st.columns([1, 2])
+    with col_reset:
+        if st.button("🔄 Yeni Soru Sor", on_click=sifirla, type="secondary"):
+            pass
 
-    # Eski mesajları ekrana yazdır
+    # Mesajlaşma Döngüsü
     for message in st.session_state.messages:
         with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
             st.markdown(message["content"])
 
-    # Kullanıcıdan yeni mesaj al
-    if prompt := st.chat_input("Kafadar'a bir şey sor (Örn: Neden 5 bulduk?)"):
-        # 1. Kullanıcı mesajını ekrana bas
+    # Yeni Mesaj Girişi
+    if prompt := st.chat_input("Anlamadığın yeri sor..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
 
-        # 2. Yapay zekaya gönder ve cevap al
         with st.spinner("Kafadar yazıyor..."):
             try:
                 response = st.session_state.chat_session.send_message(prompt)
-                ai_text = response.text
-                
-                # 3. AI mesajını ekrana bas ve kaydet
-                st.session_state.messages.append({"role": "assistant", "content": ai_text})
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
                 with st.chat_message("assistant", avatar="🤖"):
-                    st.markdown(ai_text)
-            except Exception as e:
-                st.error("Bağlantı koptu, yeni soru butonuna basıp tekrar deneyebilirsin.")
+                    st.markdown(response.text)
+            except:
+                st.error("Bağlantı hatası. Lütfen sayfayı yenile.")
