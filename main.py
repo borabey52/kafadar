@@ -49,15 +49,13 @@ if "messages" not in st.session_state: st.session_state.messages = []
 if "chat_session" not in st.session_state: st.session_state.chat_session = None
 if 'kamera_acik' not in st.session_state: st.session_state.kamera_acik = False
 if 'ses_aktif' not in st.session_state: st.session_state.ses_aktif = True
-# Varsayılan ses (Erkek: Ahmet, Kadın: Emel)
-if 'secilen_ses' not in st.session_state: st.session_state.secilen_ses = "tr-TR-AhmetNeural"
 
 def sifirla():
     st.session_state.messages = []
     st.session_state.chat_session = None
     st.session_state.kamera_acik = False
 
-# --- TEMİZLİK ROBOTU (TTS İÇİN) ---
+# --- TEMİZLİK ROBOTU ---
 def metni_temizle_tts_icin(text):
     text = text.replace("#", "").replace("*", "")
     temiz_text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞIÖŞÜ\s\.,!\?\-':;]", "", text)
@@ -75,9 +73,10 @@ def sesi_yaziya_cevir(audio_bytes):
     except Exception as e:
         return None
 
-# --- YAZIYI SESE ÇEVİR (EDGE TTS - SEÇMELİ) ---
-async def seslendir_async(metin, ses_id):
-    communicate = edge_tts.Communicate(metin, ses_id)
+# --- YAZIYI SESE ÇEVİR (EDGE TTS) ---
+# Burada "tr-TR-EmelNeural" (Kadın Sesi) sabitlendi.
+async def seslendir_async(metin, ses="tr-TR-EmelNeural"):
+    communicate = edge_tts.Communicate(metin, ses)
     mp3_fp = io.BytesIO()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
@@ -88,12 +87,9 @@ async def seslendir_async(metin, ses_id):
 def metni_oku(metin):
     try:
         temiz_metin = metni_temizle_tts_icin(metin)
-        # Session state'teki seçili sesi kullanıyoruz
-        ses_id = st.session_state.secilen_ses
-        
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        ses_dosyasi = loop.run_until_complete(seslendir_async(temiz_metin, ses_id))
+        ses_dosyasi = loop.run_until_complete(seslendir_async(temiz_metin))
         return ses_dosyasi
     except Exception as e:
         st.error(f"Ses hatası: {e}")
@@ -114,20 +110,9 @@ with col1:
 with col2:
     sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
 
-# --- YENİ EKLENEN SES AYARLARI ---
-with st.expander("⚙️ Kafadar'ın Ayarları", expanded=True):
-    c_ses1, c_ses2 = st.columns(2)
-    with c_ses1:
-        st.session_state.ses_aktif = st.toggle("🔊 Sesli Yanıt", value=True)
-    with c_ses2:
-        # Ses Seçimi Dropdown
-        ses_tercihi = st.selectbox("🗣️ Kafadar'ın Sesi", ["Erkek (Ahmet)", "Kadın (Emel)"])
-        
-        # Seçime göre ID atama (Microsoft Edge Ses ID'leri)
-        if ses_tercihi == "Erkek (Ahmet)":
-            st.session_state.secilen_ses = "tr-TR-AhmetNeural"
-        else:
-            st.session_state.secilen_ses = "tr-TR-EmelNeural"
+# --- AYARLAR (Sadece Ses Aç/Kapa Kaldı) ---
+with st.expander("⚙️ Ses Ayarı", expanded=False):
+    st.session_state.ses_aktif = st.toggle("🔊 Kafadar Sesli Konuşsun", value=True)
 
 st.markdown("---")
 
