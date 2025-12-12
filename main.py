@@ -5,6 +5,7 @@ import edge_tts
 import asyncio
 import io
 import re
+import random
 
 # ==========================================
 # 1. AYARLAR & TASARIM
@@ -38,25 +39,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. API BAĞLANTISI (TEK VE SAĞLAM)
+# 2. ÇOKLU API ANAHTARI YÖNETİMİ
 # ==========================================
-if "GOOGLE_API_KEY" in st.secrets:
-    api_key = st.secrets["GOOGLE_API_KEY"]
-else:
-    st.error("🚨 API Anahtarı Bulunamadı! (secrets.toml dosyasını kontrol et)")
-    st.stop()
+def get_api_keys():
+    # Secrets dosyasındaki tüm "GOOGLE_API_KEY" ile başlayanları toplar
+    keys = [v for k, v in st.secrets.items() if "GOOGLE_API_KEY" in k]
+    # Eğer özel isimlendirme yoksa standart olanı da ekle
+    if "GOOGLE_API_KEY" in st.secrets and st.secrets["GOOGLE_API_KEY"] not in keys:
+        keys.append(st.secrets["GOOGLE_API_KEY"])
+    return keys
 
-genai.configure(api_key=api_key)
+API_KEYS = get_api_keys()
+
+if not API_KEYS:
+    st.error("🚨 Hiçbir API Anahtarı bulunamadı! Lütfen secrets ayarlarını kontrol et.")
+    st.stop()
 
 # ==========================================
 # 3. FONKSİYONLAR
 # ==========================================
 
-# --- HIZLANDIRICI: RESİM SIKIŞTIRMA FONKSİYONU ---
+# --- HIZLANDIRICI: RESİM SIKIŞTIRMA ---
 def compress_image(image):
     """
-    Büyük resimleri kaliteyi bozmadan 800px genişliğe küçültür.
-    Bu, yükleme hızını 10 kata kadar artırır.
+    Resmi Google'a göndermeden önce 800px'e küçültür.
+    Bu işlem hızı inanılmaz artırır.
     """
     img = image.copy()
     if img.width > 800 or img.height > 800:
@@ -81,17 +88,22 @@ def metni_temizle_tts_icin(text):
     temiz_text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞIÖŞÜ\s\.,!\?\-':;]", "", text)
     return temiz_text.strip()
 
-# Sesi Yazıya Çevirme
+# Sesi Yazıya Çevirme (Rotasyonlu)
 def sesi_yaziya_cevir(audio_bytes):
-    try:
-        model = genai.GenerativeModel("gemini-flash-latest")
-        response = model.generate_content([
-            "Söylenenleri aynen yaz.",
-            {"mime_type": "audio/wav", "data": audio_bytes}
-        ])
-        return response.text.strip()
-    except:
-        return None
+    random.shuffle(API_KEYS)
+    for key in API_KEYS:
+        try:
+            genai.configure(api_key=key)
+            # GÜVENİLİR MODEL: gemini-flash-latest
+            model = genai.GenerativeModel("gemini-flash-latest")
+            response = model.generate_content([
+                "Söylenenleri aynen yaz.",
+                {"mime_type": "audio/wav", "data": audio_bytes}
+            ])
+            return response.text.strip()
+        except:
+            continue
+    return None
 
 # Yazıyı Sese Çevirme (Edge TTS - Kadın Sesi)
 async def seslendir_async(metin, ses="tr-TR-EmelNeural"):
@@ -133,7 +145,7 @@ with st.expander("⚙️ Ses Ayarı", expanded=False):
 st.markdown("---")
 
 # ==========================================
-# 5. BAŞLATMA
+# 5. BAŞLATMA (MULTI-KEY + DOĞRU MODEL)
 # ==========================================
 if not st.session_state.chat_session:
     tab1, tab2 = st.tabs(["📂 Dosyadan Yükle", "📸 Kamerayı Kullan"])
@@ -160,37 +172,51 @@ if not st.session_state.chat_session:
                 st.warning("⚠️ Lütfen adını yaz.")
             else:
                 with st.spinner("Kafadar hazırlanıyor..."):
-                    try:
-                        # --- HIZLANDIRMA UYGULANIYOR ---
-                        # Resmi API'ye göndermeden önce burada küçültüyoruz
-                        compressed_img = compress_image(uploaded_image)
-                        
-                        system_prompt = f"""
-                        Senin adın 'Kafadar'. Sen {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
-                        GÖREVLERİN:
-                        1. Görüntüdeki dersi/konuyu anla.
-                        2. Soru boşsa: Çözüm yolunu anlat ama CEVABI DİREKT VERME.
-                        3. Soru çözülmüşse: Kontrol et, yanlışsa ipucu ver.
-                        ODAK KURALI: Ders dışı sohbete girme.
-                        TONU: Samimi, emojili, motive edici. {isim} diye hitap et.
-                        """
-                        
-                        model = genai.GenerativeModel("gemini-1.5-flash")
-                        st.session_state.chat_session = model.start_chat(
-                            history=[{"role": "user", "parts": [system_prompt, compressed_img]}]
-                        )
-                        
-                        response = st.session_state.chat_session.send_message("Hadi incele.")
-                        st.session_state.messages.append({"role": "assistant", "content": response.text})
-                        
-                        if st.session_state.ses_aktif:
-                            ses = metni_oku(response.text)
-                            if ses: st.session_state.messages.append({"role": "audio", "content": ses})
-                        
+                    # --- RESMİ SIKIŞTIR ---
+                    compressed_img = compress_image(uploaded_image)
+                    
+                    system_prompt = f"""
+                    Senin adın 'Kafadar'. Sen {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
+                    GÖREVLERİN:
+                    1. Görüntüdeki dersi/konuyu anla.
+                    2. Soru boşsa: Çözüm yolunu anlat ama CEVABI DİREKT VERME.
+                    3. Soru çözülmüşse: Kontrol et, yanlışsa ipucu ver.
+                    ODAK KURALI: Ders dışı sohbete girme.
+                    TONU: Samimi, emojili, motive edici. {isim} diye hitap et.
+                    """
+                    
+                    # --- ÇOKLU ANAHTAR DÖNGÜSÜ ---
+                    basarili = False
+                    random.shuffle(API_KEYS) # Anahtarları karıştır (yük dağılımı)
+                    
+                    for key in API_KEYS:
+                        try:
+                            genai.configure(api_key=key)
+                            # BURADAKİ MODEL İSMİNİ DÜZELTTİK:
+                            model = genai.GenerativeModel("gemini-flash-latest")
+                            
+                            st.session_state.chat_session = model.start_chat(
+                                history=[{"role": "user", "parts": [system_prompt, compressed_img]}]
+                            )
+                            
+                            response = st.session_state.chat_session.send_message("Hadi incele.")
+                            st.session_state.messages.append({"role": "assistant", "content": response.text})
+                            
+                            if st.session_state.ses_aktif:
+                                ses = metni_oku(response.text)
+                                if ses: st.session_state.messages.append({"role": "audio", "content": ses})
+                            
+                            basarili = True
+                            break # Başarılıysa döngüden çık
+                        except Exception as e:
+                            # Hata olursa sessizce diğer anahtara geç
+                            print(f"Key hatası: {e}")
+                            continue
+                    
+                    if not basarili:
+                        st.error("⚠️ Sistem yoğun veya tüm anahtarlar kotada. Lütfen biraz bekle.")
+                    else:
                         st.rerun()
-                        
-                    except Exception as e:
-                        st.error(f"Bir hata oluştu: {e}")
 
 # ==========================================
 # 6. SOHBET DÖNGÜSÜ
