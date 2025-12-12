@@ -5,8 +5,6 @@ import edge_tts
 import asyncio
 import io
 import re
-import random
-import time
 
 # ==========================================
 # 1. AYARLAR & TASARIM
@@ -40,32 +38,32 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. API ANAHTARI VE OPTİMİZASYON
+# 2. TEK VE SAĞLAM API ANAHTARI
 # ==========================================
-def get_api_keys():
-    keys = [v for k, v in st.secrets.items() if "GOOGLE_API_KEY" in k]
-    if not keys and "GOOGLE_API_KEY" in st.secrets:
-        keys.append(st.secrets["GOOGLE_API_KEY"])
-    return keys
-
-API_KEYS = get_api_keys()
-if not API_KEYS:
-    st.error("🚨 API Anahtarı bulunamadı!")
+if "GOOGLE_API_KEY" in st.secrets:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+else:
+    st.error("🚨 API Anahtarı Bulunamadı! (secrets.toml dosyasını kontrol et)")
     st.stop()
 
-# --- SADECE BU ÖZELLİĞİ ALDIK: RESİM SIKIŞTIRMA ---
+genai.configure(api_key=api_key)
+
+# ==========================================
+# 3. FONKSİYONLAR (SIKIŞTIRMA BURADA)
+# ==========================================
+
+# --- HIZLANDIRICI: RESİM SIKIŞTIRMA ---
 def compress_image(image):
     """
     Büyük resimleri 800px genişliğe küçültür.
     Bu işlem API'ye gönderim süresini ve işleme süresini ciddi oranda düşürür.
     """
     img = image.copy()
-    img.thumbnail((800, 800))  # En-boy oranını koruyarak max 800px yapar
+    # Eğer resim çok büyükse küçült (Max genişlik/yükseklik 800px)
+    if img.width > 800 or img.height > 800:
+        img.thumbnail((800, 800))
     return img
 
-# ==========================================
-# 3. HAFIZA VE FONKSİYONLAR
-# ==========================================
 if "messages" not in st.session_state: st.session_state.messages = []
 if "chat_session" not in st.session_state: st.session_state.chat_session = None
 if 'kamera_acik' not in st.session_state: st.session_state.kamera_acik = False
@@ -76,6 +74,7 @@ def sifirla():
     st.session_state.chat_session = None
     st.session_state.kamera_acik = False
 
+# Kelime Temizleme (Cevap -> Yanıt)
 def metni_temizle_tts_icin(text):
     text = re.sub(r'(?i)cevap', 'yanıt', text)
     text = re.sub(r'(?i)cevab', 'yanıt', text)
@@ -83,21 +82,19 @@ def metni_temizle_tts_icin(text):
     temiz_text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞIÖŞÜ\s\.,!\?\-':;]", "", text)
     return temiz_text.strip()
 
+# Sesi Yazıya Çevirme
 def sesi_yaziya_cevir(audio_bytes):
-    random.shuffle(API_KEYS)
-    for key in API_KEYS:
-        try:
-            genai.configure(api_key=key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content([
-                "Söylenenleri aynen yaz.",
-                {"mime_type": "audio/wav", "data": audio_bytes}
-            ])
-            return response.text.strip()
-        except:
-            continue
-    return None
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content([
+            "Söylenenleri aynen yaz.",
+            {"mime_type": "audio/wav", "data": audio_bytes}
+        ])
+        return response.text.strip()
+    except:
+        return None
 
+# Yazıyı Sese Çevirme (Edge TTS)
 async def seslendir_async(metin, ses="tr-TR-EmelNeural"):
     communicate = edge_tts.Communicate(metin, ses)
     mp3_fp = io.BytesIO()
@@ -137,7 +134,7 @@ with st.expander("⚙️ Ses Ayarı", expanded=False):
 st.markdown("---")
 
 # ==========================================
-# 5. BAŞLATMA (SIKIŞTIRMA EKLENDİ, STREAMING KALDIRILDI)
+# 5. BAŞLATMA
 # ==========================================
 if not st.session_state.chat_session:
     tab1, tab2 = st.tabs(["📂 Dosyadan Yükle", "📸 Kamerayı Kullan"])
@@ -163,104 +160,4 @@ if not st.session_state.chat_session:
             if not isim:
                 st.warning("⚠️ Lütfen adını yaz.")
             else:
-                with st.spinner("Kafadar hazırlanıyor..."):
-                    # --- HIZLANDIRMA: RESMİ KÜÇÜLT ---
-                    compressed_img = compress_image(uploaded_image)
-                    
-                    # Prompt (Eski düzen)
-                    system_prompt = f"""
-                    Senin adın 'Kafadar'. Sen {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
-                    GÖREVLERİN:
-                    1. Görüntüdeki dersi/konuyu anla.
-                    2. Soru boşsa: Çözüm yolunu anlat ama CEVABI DİREKT VERME.
-                    3. Soru çözülmüşse: Kontrol et, yanlışsa ipucu ver.
-                    ODAK KURALI: Ders dışı sohbete girme.
-                    TONU: Samimi, emojili, motive edici. {isim} diye hitap et.
-                    """
-                    
-                    basarili = False
-                    random.shuffle(API_KEYS)
-                    
-                    for key in API_KEYS:
-                        try:
-                            genai.configure(api_key=key)
-                            model = genai.GenerativeModel("gemini-1.5-flash")
-                            
-                            st.session_state.chat_session = model.start_chat(
-                                history=[{"role": "user", "parts": [system_prompt, compressed_img]}]
-                            )
-                            # Normal gönderim (Streaming YOK)
-                            response = st.session_state.chat_session.send_message("Hadi incele.")
-                            st.session_state.messages.append({"role": "assistant", "content": response.text})
-                            
-                            if st.session_state.ses_aktif:
-                                ses = metni_oku(response.text)
-                                if ses: st.session_state.messages.append({"role": "audio", "content": ses})
-                            
-                            basarili = True
-                            break 
-                        except:
-                            continue
-                    
-                    if not basarili:
-                        st.error("⚠️ Sistem yoğun, lütfen tekrar dene.")
-                    else:
-                        st.rerun()
-
-# ==========================================
-# 6. SOHBET DÖNGÜSÜ (NORMAL)
-# ==========================================
-else:
-    col_reset, col_dummy = st.columns([1, 2])
-    with col_reset:
-        if st.button("🔄 Yeni Soru Sor", on_click=sifirla, type="secondary"):
-            pass
-
-    for message in st.session_state.messages:
-        if message["role"] == "audio":
-            st.audio(message["content"], format="audio/mp3")
-        else:
-            with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
-                st.markdown(message["content"])
-
-    user_input = None
-    text_input = st.chat_input("Anlamadığın yeri yaz...")
-    if text_input: user_input = text_input
-
-    audio_input = st.audio_input("🎤 Sesli Sor", label_visibility="collapsed")
-    if audio_input:
-        with st.spinner("Ses algılanıyor..."):
-            audio_bytes = audio_input.read()
-            transcribed_text = sesi_yaziya_cevir(audio_bytes)
-            if transcribed_text: user_input = transcribed_text
-            else: st.error("Ses anlaşılamadı.")
-
-    if user_input:
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.chat_message("user", avatar="👤"):
-            st.markdown(user_input)
-
-        with st.spinner("Kafadar düşünüyor..."):
-            try:
-                # Normal cevap (Streaming YOK)
-                response = st.session_state.chat_session.send_message(user_input)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-                with st.chat_message("assistant", avatar="🤖"):
-                    st.markdown(response.text)
-                
-                if st.session_state.ses_aktif:
-                    ses_verisi = metni_oku(response.text)
-                    if ses_verisi:
-                        st.audio(ses_verisi, format="audio/mp3", autoplay=True)
-                        st.session_state.messages.append({"role": "audio", "content": ses_verisi})
-            except:
-                st.error("Bağlantı hatası.")
-
-# ==========================================
-# 7. FOOTER
-# ==========================================
-st.markdown("""
-<div class="footer">
-    © Kafadar uygulaması <b>Sinan Sayılır</b> tarafından geliştirilmiştir.
-</div>
-""", unsafe_allow_html=True)
+                with
