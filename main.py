@@ -53,9 +53,12 @@ def compress_image(image):
     return img
 
 def image_to_base64(img):
+    if img.mode != "RGB":
+        img = img.convert("RGB")   # 👈 KRİTİK SATIR
     buf = io.BytesIO()
-    img.save(buf, format="JPEG")
+    img.save(buf, format="JPEG", quality=85)
     return base64.b64encode(buf.getvalue()).decode()
+
 
 def metni_temizle(text):
     text = re.sub(r'(?i)cevap', 'yanıt', text)
