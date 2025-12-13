@@ -7,16 +7,18 @@ import io
 import re
 
 # ==========================================
-# 1. AYARLAR & TASARIM
+# 1. AYARLAR & TASARIM (CSS)
 # ==========================================
-st.set_page_config(page_title="Kafadar", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="Zekai", page_icon="🧠", layout="centered")
 
 st.markdown("""
     <style>
     .stApp { background-color: #fcfdfd; }
-    h1 { color: #2E86C1; font-family: 'Comic Sans MS', sans-serif; text-align: center; }
+    
+    /* Mesaj Baloncukları */
     .stChatMessage { border-radius: 10px; }
     
+    /* Buton Tasarımı */
     .stButton>button {
         background-color: #F4D03F; color: #17202A; border-radius: 15px;
         font-weight: bold; border: none; padding: 12px 24px; transition: all 0.3s;
@@ -26,26 +28,30 @@ st.markdown("""
         background-color: #F1C40F; transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
     
+    /* Input Alanları Temizliği */
     [data-testid="stTextInput"] > div > div { border: none !important; background-color: #f0f2f6; border-radius: 10px; }
     [data-testid="stSelectbox"] > div > div { border: none !important; background-color: #f0f2f6; border-radius: 10px; }
     
-    [data-testid="stAudioInput"] { margin-top: 20px; margin-bottom: -20px; }
-    .block-container { padding-bottom: 150px; }
-    
-    .footer {
-        position: fixed; left: 0; bottom: 0; width: 100%;
-        background-color: #fcfdfd; color: #888; text-align: center;
-        font-size: 14px; padding: 10px; border-top: 1px solid #eee; z-index: 900;
+    /* Mikrofon Sabitleme */
+    [data-testid="stAudioInput"] {
+        position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+        width: 100%; max-width: 700px; z-index: 999;
+        background-color: rgba(252, 253, 253, 0.9);
+        padding: 5px 20px; border-radius: 20px 20px 0 0; backdrop-filter: blur(5px);
     }
     
-    /* Pekiştirme Alanı Stili */
+    .block-container { padding-bottom: 200px; }
+    
+    .footer {
+        text-align: center; color: #888; font-size: 12px; margin-top: 50px; padding-bottom: 20px;
+    }
+    
+    /* Pekiştirme & Test Kutuları */
     .pekistirme-box {
-        background-color: #e8f6f3;
-        border: 2px dashed #1abc9c;
-        border-radius: 15px;
-        padding: 20px;
-        margin-top: 20px;
-        margin-bottom: 20px;
+        background-color: #e8f6f3; border: 2px dashed #1abc9c; border-radius: 15px; padding: 20px; margin-top: 20px; margin-bottom: 20px;
+    }
+    .test-box {
+        background-color: #fef9e7; border: 2px solid #f1c40f; border-radius: 15px; padding: 20px; margin-top: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -70,18 +76,21 @@ def compress_image(image):
         img.thumbnail((800, 800))
     return img
 
+# State Tanımları
 if "messages" not in st.session_state: st.session_state.messages = []
 if "chat_session" not in st.session_state: st.session_state.chat_session = None
 if 'kamera_acik' not in st.session_state: st.session_state.kamera_acik = False
 if 'ses_aktif' not in st.session_state: st.session_state.ses_aktif = True
 if 'ilk_karsilama_yapildi' not in st.session_state: st.session_state.ilk_karsilama_yapildi = False
 if 'yeni_pratik_soru' not in st.session_state: st.session_state.yeni_pratik_soru = None
+if 'hazirlanan_test' not in st.session_state: st.session_state.hazirlanan_test = None
 
 def yeni_soru_yukle():
     st.session_state.messages = []
     st.session_state.chat_session = None
     st.session_state.kamera_acik = False
     st.session_state.yeni_pratik_soru = None
+    st.session_state.hazirlanan_test = None
 
 def metni_temizle_tts_icin(text):
     text = re.sub(r'(?i)cevap', 'yanıt', text)
@@ -121,10 +130,21 @@ def metni_oku(metin):
         return None
 
 # ==========================================
-# 4. ARAYÜZ
+# 4. ARAYÜZ (GİRİŞ) - LOGO BURADA
 # ==========================================
-st.title("🤖 Kafadar")
-st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Senin Zeki Çalışma Arkadaşın</h3>", unsafe_allow_html=True)
+
+# Logoyu ortalamak için kolon kullanıyoruz
+col_sol, col_orta, col_sag = st.columns([1, 6, 1])
+
+with col_orta:
+    try:
+        # 400px genişliğinde logoyu bas
+        st.image("zekai_logo.png", width=400)
+    except:
+        # Eğer resim henüz yüklenmediyse geçici başlık göster
+        st.title("🧠 Zekai")
+
+st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Yeni Nesil Zeki Öğrenci Koçu</h3>", unsafe_allow_html=True)
 
 st.info("👇 Önce kendini tanıt, sonra sorunu yükle:")
 
@@ -135,12 +155,12 @@ with col2:
     sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
 
 with st.expander("⚙️ Ses Ayarı", expanded=False):
-    st.session_state.ses_aktif = st.toggle("🔊 Kafadar Sesli Konuşsun", value=True)
+    st.session_state.ses_aktif = st.toggle("🔊 Zekai Sesli Konuşsun", value=True)
 
 st.markdown("---")
 
 # ==========================================
-# 5. BAŞLATMA
+# 5. DOSYA YÜKLEME VE BAŞLATMA
 # ==========================================
 if not st.session_state.chat_session:
     tab1, tab2 = st.tabs(["📂 Dosyadan Yükle (Çoklu)", "📸 Kamerayı Kullan"])
@@ -165,25 +185,25 @@ if not st.session_state.chat_session:
         for i, img in enumerate(uploaded_images[:4]):
             cols[i].image(img, width=100, caption=f"Sayfa {i+1}")
 
-        if st.button("🚀 KAFADAR İNCELE", type="primary"):
+        if st.button("🚀 ZEKAİ İNCELE", type="primary"):
             if not isim:
                 st.warning("⚠️ Lütfen adını yaz.")
             else:
-                with st.spinner("Kafadar inceliyor..."):
+                with st.spinner("Zekai inceliyor..."):
                     try:
                         hitap_kurali = ""
                         if st.session_state.ilk_karsilama_yapildi == False:
-                            hitap_kurali = f"GİRİŞ: '{isim}, merhaba! Ben Kafadar. Hadi şu kağıtlara birlikte bakalım.' şeklinde sıcak bir giriş yap."
+                            hitap_kurali = f"GİRİŞ: '{isim}, merhaba! Ben Zekai. Hadi şu kağıtlara birlikte bakalım.' şeklinde sıcak bir giriş yap."
                         else:
                             hitap_kurali = f"GİRİŞ: Tekrar merhaba demene gerek yok. Sanki az önce konuşuyormuşuz gibi devam et."
 
                         prompt_content = []
                         system_prompt = f"""
-                        Senin adın 'Kafadar'. {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
+                        Senin adın 'Zekai'. {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
                         {hitap_kurali}
                         GÖREVLERİN:
                         1. Dersi/konuyu anla.
-                        2. (PUANLAMA) 5+ soru veya yazılı kağıdıysa: Doğru/Yanlış analizi yap ve 100 üzerinden not ver.
+                        2. (PUANLAMA) 5+ soru veya yazılı kağıdıysa: Doğru/Yanlış analizi yap ve 100 üzerinden motive edici bir not ver.
                         3. Boşsa: Çözüm yolunu anlat (CEVABI DİREKT VERME).
                         4. Çözülmüşse: Kontrol et, yanlışsa ipucu ver.
                         TONU: Samimi, emojili, motive edici.
@@ -209,7 +229,7 @@ if not st.session_state.chat_session:
                         st.error(f"Hata: {e}")
 
 # ==========================================
-# 6. SOHBET VE PEKİŞTİRME ALANI
+# 6. SOHBET VE PRATİK ALANI
 # ==========================================
 else:
     col_reset, col_dummy = st.columns([1, 2])
@@ -221,68 +241,105 @@ else:
         if message["role"] == "audio":
             st.audio(message["content"], format="audio/mp3")
         else:
-            with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
+            with st.chat_message(message["role"], avatar="🧠" if message["role"] == "assistant" else "👤"):
                 st.markdown(message["content"])
 
-    # --- BENZER SORU ÜRETME (DÜZELTİLDİ) ---
+    # --- EKSTRA ÇALIŞMA ALANI ---
     if st.session_state.messages and st.session_state.messages[-1]["role"] in ["assistant", "audio"]:
         st.markdown("<br>", unsafe_allow_html=True)
-
-        if not st.session_state.yeni_pratik_soru:
-            if st.button("💪 Meydan Okuyorum! Benzer Soru Sor", type="primary", use_container_width=True):
-                with st.spinner("Kafadar senin için özel bir soru hazırlıyor..."):
-                    # Hata kontrol bayrağı
-                    hata_olustu = False
-                    try:
-                        # PROMPT GÜNCELLENDİ: Şıklar alt alta
-                        pratik_prompt = """
-                        Şimdi öğretmen sensin! Az önce konuştuğumuz/çözdüğümüz soruya 
-                        MATEMATİKSEL ve MANTIKSAL olarak benzer, rakamları farklı YENİ BİR SORU yaz.
-                        
-                        KURALLAR:
-                        1. Cevabı hemen verme.
-                        2. Formatı kesinlikle şöyle yap (Şıklar alt alta):
-                           **SORU:** [Soru Metni]
-                           A) ...
-                           B) ...
-                           C) ...
-                           D) ...
-                           **CEVAP_GIZLI:** [Doğru Cevap ve Çözümü]
-                        """
-                        response_pratik = st.session_state.chat_session.send_message(pratik_prompt)
-                        st.session_state.yeni_pratik_soru = response_pratik.text
-                    except Exception as e:
-                        hata_olustu = True
-                        st.error(f"Soru hazırlanamadı: {e}")
-                        st.session_state.yeni_pratik_soru = None
-                    
-                    # st.rerun()'ı try-except dışına aldık
-                    if not hata_olustu:
-                        st.rerun()
         
+        if not st.session_state.yeni_pratik_soru and not st.session_state.hazirlanan_test:
+            
+            st.caption("🚀 Kendini Denemek İster misin?")
+            soru_sayisi = st.radio("Test Uzunluğu:", [5, 10], horizontal=True, index=0)
+            col_meydan, col_test = st.columns(2)
+            
+            # 1. BUTON: MEYDAN OKU
+            with col_meydan:
+                if st.button("🥊 Meydan Oku (Tek Soru)", use_container_width=True):
+                    with st.spinner("Zekai zorlu bir soru hazırlıyor..."):
+                        try:
+                            pratik_prompt = """
+                            Öğretmen sensin! Konuya benzer, rakamları farklı YENİ BİR SORU yaz.
+                            Format:
+                            **SORU:** [Soru]
+                            A) ...
+                            B) ...
+                            C) ...
+                            D) ...
+                            **CEVAP_GIZLI:** [Cevap ve Çözüm]
+                            """
+                            response = st.session_state.chat_session.send_message(pratik_prompt)
+                            st.session_state.yeni_pratik_soru = response.text
+                            st.rerun()
+                        except:
+                            st.error("Hata oluştu.")
+
+            # 2. BUTON: TEST HAZIRLA
+            with col_test:
+                if st.button(f"📝 {soru_sayisi} Soruluk Test", use_container_width=True):
+                    with st.spinner(f"Zekai {soru_sayisi} soruluk testi hazırlıyor..."):
+                        try:
+                            test_prompt = f"""
+                            Konuyla ilgili {soru_sayisi} adet çoktan seçmeli sorudan oluşan bir tarama testi hazırla.
+                            KURALLAR:
+                            1. Soruları art arda numaralandır (1., 2. gibi).
+                            2. Cevap anahtarını testin EN SONUNDA ver.
+                            3. Format:
+                               **1. Soru:** ...
+                               A)... B)...
+                               ---
+                               **CEVAP ANAHTARI:**
+                               1-A, 2-C ...
+                            """
+                            response = st.session_state.chat_session.send_message(test_prompt)
+                            st.session_state.hazirlanan_test = response.text
+                            st.rerun()
+                        except:
+                            st.error("Test hazırlanamadı.")
+
+        # --- GÖRÜNÜM: TEK SORU ---
         if st.session_state.yeni_pratik_soru:
             try:
                 parts = st.session_state.yeni_pratik_soru.split("**CEVAP_GIZLI:**")
-                soru_kismi = parts[0].replace("**SORU:**", "").strip()
-                cevap_kismi = parts[1].strip() if len(parts) > 1 else "Cevap yüklenemedi."
+                soru = parts[0].replace("**SORU:**", "").strip()
+                cevap = parts[1].strip() if len(parts) > 1 else "Cevap yok."
                 
-                st.markdown(f"""
-                <div class="pekistirme-box">
-                    <h4 style="color: #16a085;">🎯 Sıra Sende {isim}!</h4>
-                    <p style="font-size: 1.1em; white-space: pre-line;">{soru_kismi}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                with st.expander("👀 Cevabı ve Çözümü Gör"):
-                    st.info(cevap_kismi)
-                    if st.button("Tamamdır, bu konuyu kaptım! 😎", on_click=lambda: st.session_state.update(yeni_pratik_soru=None)):
-                        pass
-
+                st.markdown(f'<div class="pekistirme-box"><h4>🥊 Meydan Okuma Sorusu</h4>{soru}</div>', unsafe_allow_html=True)
+                with st.expander("👀 Cevabı Gör"):
+                    st.info(cevap)
+                    if st.button("Kapat"):
+                        st.session_state.yeni_pratik_soru = None
+                        st.rerun()
             except:
-                st.warning("Format hatası oluştu ama işte soru:")
                 st.write(st.session_state.yeni_pratik_soru)
 
-    # --- INPUT ALANLARI ---
+        # --- GÖRÜNÜM: ÇOKLU TEST ---
+        if st.session_state.hazirlanan_test:
+            st.markdown(f'<div class="test-box"><h4>📝 Konu Tarama Testi</h4>', unsafe_allow_html=True)
+            try:
+                if "CEVAP ANAHTARI" in st.session_state.hazirlanan_test:
+                    bolumler = st.session_state.hazirlanan_test.split("CEVAP ANAHTARI")
+                    sorular = bolumler[0]
+                    anahtar = bolumler[1]
+                else:
+                    sorular = st.session_state.hazirlanan_test
+                    anahtar = "Metnin içinde ara."
+                
+                st.markdown(sorular)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                with st.expander("🔑 Cevap Anahtarını Göster"):
+                    st.success(f"**CEVAP ANAHTARI:** {anahtar}")
+                    if st.button("Testi Bitir"):
+                        st.session_state.hazirlanan_test = None
+                        st.rerun()
+            except:
+                st.write(st.session_state.hazirlanan_test)
+
+    # --- FOOTER & INPUT ---
+    st.markdown("""<div class="footer">© Zekai uygulaması <b>Sinan Sayılır</b> tarafından geliştirilmiştir.</div>""", unsafe_allow_html=True)
+
     user_input = None
     audio_input = st.audio_input("🎤 Sesli Sor", label_visibility="collapsed")
     text_input = st.chat_input("Anlamadığın yeri yaz...")
@@ -300,11 +357,11 @@ else:
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_input)
 
-        with st.spinner("Kafadar düşünüyor..."):
+        with st.spinner("Zekai düşünüyor..."):
             try:
                 response = st.session_state.chat_session.send_message(user_input)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
-                with st.chat_message("assistant", avatar="🤖"):
+                with st.chat_message("assistant", avatar="🧠"):
                     st.markdown(response.text)
                 
                 if st.session_state.ses_aktif:
@@ -314,12 +371,3 @@ else:
                         st.session_state.messages.append({"role": "audio", "content": ses_verisi})
             except Exception as e:
                 st.error(f"Hata: {e}")
-
-# ==========================================
-# 7. FOOTER
-# ==========================================
-st.markdown("""
-<div class="footer">
-    © Kafadar uygulaması <b>Sinan Sayılır</b> tarafından geliştirilmiştir.
-</div>
-""", unsafe_allow_html=True)
