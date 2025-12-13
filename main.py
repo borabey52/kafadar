@@ -75,14 +75,13 @@ if "chat_session" not in st.session_state: st.session_state.chat_session = None
 if 'kamera_acik' not in st.session_state: st.session_state.kamera_acik = False
 if 'ses_aktif' not in st.session_state: st.session_state.ses_aktif = True
 if 'ilk_karsilama_yapildi' not in st.session_state: st.session_state.ilk_karsilama_yapildi = False
-# YENİ: Pratik sorusu hafızası
 if 'yeni_pratik_soru' not in st.session_state: st.session_state.yeni_pratik_soru = None
 
 def yeni_soru_yukle():
     st.session_state.messages = []
     st.session_state.chat_session = None
     st.session_state.kamera_acik = False
-    st.session_state.yeni_pratik_soru = None # Yeni soru yüklenince pratik sorusunu sıfırla
+    st.session_state.yeni_pratik_soru = None
 
 def metni_temizle_tts_icin(text):
     text = re.sub(r'(?i)cevap', 'yanıt', text)
@@ -218,7 +217,6 @@ else:
         if st.button("🔄 Başka Soruya Geç", on_click=yeni_soru_yukle, type="secondary"):
             pass
 
-    # SOHBET GEÇMİŞİNİ GÖSTER
     for message in st.session_state.messages:
         if message["role"] == "audio":
             st.audio(message["content"], format="audio/mp3")
@@ -226,40 +224,44 @@ else:
             with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
                 st.markdown(message["content"])
 
-    # ---------------------------------------------------------
-    # YENİ ÖZELLİK: BENZER SORU ÜRETME (PEKİŞTİRME)
-    # ---------------------------------------------------------
-    # Sadece sohbet varsa ve en son mesaj asistandansa göster
+    # --- BENZER SORU ÜRETME (DÜZELTİLDİ) ---
     if st.session_state.messages and st.session_state.messages[-1]["role"] in ["assistant", "audio"]:
-        
-        st.markdown("<br>", unsafe_allow_html=True) # Biraz boşluk
+        st.markdown("<br>", unsafe_allow_html=True)
 
-        # Eğer henüz soru üretilmediyse butonu göster
         if not st.session_state.yeni_pratik_soru:
             if st.button("💪 Meydan Okuyorum! Benzer Soru Sor", type="primary", use_container_width=True):
                 with st.spinner("Kafadar senin için özel bir soru hazırlıyor..."):
+                    # Hata kontrol bayrağı
+                    hata_olustu = False
                     try:
+                        # PROMPT GÜNCELLENDİ: Şıklar alt alta
                         pratik_prompt = """
                         Şimdi öğretmen sensin! Az önce konuştuğumuz/çözdüğümüz soruya 
                         MATEMATİKSEL ve MANTIKSAL olarak benzer, rakamları farklı YENİ BİR SORU yaz.
                         
                         KURALLAR:
                         1. Cevabı hemen verme.
-                        2. Formatı kesinlikle şöyle yap:
+                        2. Formatı kesinlikle şöyle yap (Şıklar alt alta):
                            **SORU:** [Soru Metni]
-                           A) ... B) ... C) ... D) ...
+                           A) ...
+                           B) ...
+                           C) ...
+                           D) ...
                            **CEVAP_GIZLI:** [Doğru Cevap ve Çözümü]
                         """
                         response_pratik = st.session_state.chat_session.send_message(pratik_prompt)
                         st.session_state.yeni_pratik_soru = response_pratik.text
+                    except Exception as e:
+                        hata_olustu = True
+                        st.error(f"Soru hazırlanamadı: {e}")
+                        st.session_state.yeni_pratik_soru = None
+                    
+                    # st.rerun()'ı try-except dışına aldık
+                    if not hata_olustu:
                         st.rerun()
-                    except:
-                        st.error("Soru hazırlanamadı.")
         
-        # Soru üretildiyse göster
         if st.session_state.yeni_pratik_soru:
             try:
-                # Soruyu ve cevabı ayır
                 parts = st.session_state.yeni_pratik_soru.split("**CEVAP_GIZLI:**")
                 soru_kismi = parts[0].replace("**SORU:**", "").strip()
                 cevap_kismi = parts[1].strip() if len(parts) > 1 else "Cevap yüklenemedi."
@@ -267,7 +269,7 @@ else:
                 st.markdown(f"""
                 <div class="pekistirme-box">
                     <h4 style="color: #16a085;">🎯 Sıra Sende {isim}!</h4>
-                    <p style="font-size: 1.1em;">{soru_kismi}</p>
+                    <p style="font-size: 1.1em; white-space: pre-line;">{soru_kismi}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -280,9 +282,7 @@ else:
                 st.warning("Format hatası oluştu ama işte soru:")
                 st.write(st.session_state.yeni_pratik_soru)
 
-    # ---------------------------------------------------------
-    # INPUT ALANLARI
-    # ---------------------------------------------------------
+    # --- INPUT ALANLARI ---
     user_input = None
     audio_input = st.audio_input("🎤 Sesli Sor", label_visibility="collapsed")
     text_input = st.chat_input("Anlamadığın yeri yaz...")
