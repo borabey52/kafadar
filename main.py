@@ -151,7 +151,7 @@ try:
         f"""
         <div style="text-align: center; margin-bottom: 20px;">
             <img src="data:image/png;base64,{img_base64}" width="400" style="max-width: 100%;">
-            <h3 style="color: #566573; margin-top: 10px; font-family: 'Comic Sans MS', sans-serif;">Yeni Nesil Zeki Öğrenci Koçu</h3>
+            <h3 style="color: #566573; margin-top: 10px; font-family: 'Comic Sans MS', sans-serif;">      Yeni Nesil Öğrenci Koçu</h3>
         </div>
         """,
         unsafe_allow_html=True
