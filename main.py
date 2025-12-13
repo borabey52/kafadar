@@ -115,7 +115,8 @@ def metni_temizle_tts_icin(text):
 
 def sesi_yaziya_cevir(audio_bytes):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # MODEL GÜNCELLENDİ: gemini-1.5-flash-latest
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
         response = model.generate_content([
             "Söylenenleri aynen yaz.",
             {"mime_type": "audio/wav", "data": audio_bytes}
@@ -226,7 +227,8 @@ if not st.session_state.chat_session:
                         prompt_content.append(system_prompt)
                         for img in uploaded_images: prompt_content.append(compress_image(img))
                         
-                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        # MODEL GÜNCELLENDİ: gemini-1.5-flash-latest
+                        model = genai.GenerativeModel("gemini-1.5-flash-latest")
                         st.session_state.chat_session = model.start_chat(
                             history=[{"role": "user", "parts": prompt_content}]
                         )
@@ -283,7 +285,8 @@ if not st.session_state.chat_session:
                     # Session yoksa başlat
                     if not st.session_state.chat_session:
                         system_prompt = f"Sen 'Zekai'. {sinif} öğrencisi {isim}'in koçusun. Konumuz: {konu_basligi}."
-                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        # MODEL GÜNCELLENDİ: gemini-1.5-flash-latest
+                        model = genai.GenerativeModel("gemini-1.5-flash-latest")
                         st.session_state.chat_session = model.start_chat(history=[{"role": "user", "parts": [system_prompt]}])
                         st.session_state.ilk_karsilama_yapildi = True
 
@@ -302,21 +305,15 @@ if not st.session_state.chat_session:
                     response_stream = st.session_state.chat_session.send_message(final_prompt, stream=True)
                     
                     full_text = ""
-                    # Yer tutucu (Chat ekranına geçmeden önce burada gösterelim mi? 
-                    # Hayır, direkt chat geçmişine ekleyip rerun yaparsak daha doğal olur)
-                    # Ama streaming efekti için geçici bir alan kullanalım:
                     stream_area = st.empty()
                     for chunk in response_stream:
                         full_text += chunk.text
                         stream_area.markdown(full_text + "▌")
-                    stream_area.empty() # İş bitince burayı temizle
+                    stream_area.empty() # İş bitince temizle
                     
                     # Mesajı geçmişe ekle
                     st.session_state.messages.append({"role": "user", "content": f"⚡ **Mod:** {konu_basligi} hakkında {secilen_mod} istedim."})
                     st.session_state.messages.append({"role": "assistant", "content": full_text})
-                    
-                    # Eğer konu test ise, cevap anahtarını gizlemek için özel state'e atabiliriz ama
-                    # şimdilik akışta kalması daha doğal.
                     
                     st.rerun()
 
@@ -344,15 +341,12 @@ else:
             with st.chat_message(message["role"], avatar="🧠" if message["role"] == "assistant" else "👤"):
                 st.markdown(message["content"])
 
-    # --- EKSTRA ÇALIŞMA ALANI (Mevcut mantık) ---
+    # --- EKSTRA ÇALIŞMA ALANI ---
     if st.session_state.messages and st.session_state.messages[-1]["role"] in ["assistant", "audio"]:
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Test veya Soru yoksa butonları göster
         if not st.session_state.yeni_pratik_soru and not st.session_state.hazirlanan_test:
             
-            # Burada Konumatik'ten gelen bir test varsa (mesajın içinde "CEVAP ANAHTARI" geçiyorsa) 
-            # ekstra buton göstermeyelim, zaten test var.
             son_mesaj = st.session_state.messages[-1]["content"]
             
             if "CEVAP ANAHTARI" not in son_mesaj:
