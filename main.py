@@ -138,13 +138,13 @@ col_sol, col_orta, col_sag = st.columns([1, 6, 1])
 
 with col_orta:
     try:
-        # 400px genişliğinde logoyu bas
-        st.image("zekai_logo.png", width=400)
+        # 350px genişliğinde logoyu bas
+        st.image("zekai_logo.png", width=350)
     except:
         # Eğer resim henüz yüklenmediyse geçici başlık göster
         st.title("🧠 Zekai")
 
-st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Yeni Nesil Zeki Öğrenci Koçu</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Yeni Nesil Öğrenci Koçu</h3>", unsafe_allow_html=True)
 
 st.info("👇 Önce kendini tanıt, sonra sorunu yükle:")
 
