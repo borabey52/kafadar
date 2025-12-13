@@ -24,13 +24,25 @@ st.markdown("""
     
     .stChatMessage { border-radius: 10px; }
     
+    /* Genel Buton Stili */
     .stButton>button {
         background-color: #F4D03F; color: #17202A; border-radius: 15px;
         font-weight: bold; border: none; padding: 12px 24px; transition: all 0.3s;
         width: 100%;
+        border: 2px solid transparent;
     }
     .stButton>button:hover {
         background-color: #F1C40F; transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    
+    /* Konumatik Alanı Özel Tasarımı */
+    .konu-box {
+        background-color: #ebf5fb;
+        border: 2px solid #3498db;
+        border-radius: 15px;
+        padding: 20px;
+        margin-top: 20px;
+        margin-bottom: 20px;
     }
     
     [data-testid="stTextInput"] > div > div { border: none !important; background-color: #f0f2f6; border-radius: 10px; }
@@ -103,8 +115,7 @@ def metni_temizle_tts_icin(text):
 
 def sesi_yaziya_cevir(audio_bytes):
     try:
-        # HIZ İÇİN SABİT VE HIZLI MODEL
-        model = genai.GenerativeModel("gemini-flash-latest")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content([
             "Söylenenleri aynen yaz.",
             {"mime_type": "audio/wav", "data": audio_bytes}
@@ -161,9 +172,11 @@ with st.expander("⚙️ Ses Ayarı", expanded=False):
 st.markdown("---")
 
 # ==========================================
-# 5. DOSYA YÜKLEME VE BAŞLATMA
+# 5. İÇERİK OLUŞTURMA ALANI (RESİM YÜKLEME VE KONU ÇALIŞMA)
 # ==========================================
 if not st.session_state.chat_session:
+    
+    # --- A) DOSYA YÜKLEME ALANI ---
     tab1, tab2 = st.tabs(["📂 Dosyadan Yükle (Çoklu)", "📸 Kamerayı Kullan"])
     uploaded_images = []
     
@@ -180,6 +193,7 @@ if not st.session_state.chat_session:
             kamera_img = st.camera_input("Fotoğraf Çek", label_visibility="hidden")
             if kamera_img: uploaded_images.append(Image.open(kamera_img))
 
+    # Resim varsa "İncele" butonu çıkar
     if uploaded_images:
         st.success(f"✅ {len(uploaded_images)} sayfa alındı!")
         cols = st.columns(min(len(uploaded_images), 4))
@@ -204,7 +218,7 @@ if not st.session_state.chat_session:
                         {hitap_kurali}
                         GÖREVLERİN:
                         1. Dersi/konuyu anla.
-                        2. (PUANLAMA) 5+ soru veya yazılı kağıdıysa: Doğru/Yanlış analizi yap ve 100 üzerinden motive edici bir not ver.
+                        2. (PUANLAMA) 5+ soru veya yazılı kağıdıysa: Doğru/Yanlış analizi yap ve 100 üzerinden not ver.
                         3. Boşsa: Çözüm yolunu anlat (CEVABI DİREKT VERME).
                         4. Çözülmüşse: Kontrol et, yanlışsa ipucu ver.
                         TONU: Samimi, emojili, motive edici.
@@ -212,30 +226,23 @@ if not st.session_state.chat_session:
                         prompt_content.append(system_prompt)
                         for img in uploaded_images: prompt_content.append(compress_image(img))
                         
-                        # MODELİ HIZLANDIRMA: "gemini-flash-latest" (En stabil hızlı versiyon)
-                        model = genai.GenerativeModel("gemini-flash-latest")
+                        model = genai.GenerativeModel("gemini-1.5-flash")
                         st.session_state.chat_session = model.start_chat(
                             history=[{"role": "user", "parts": prompt_content}]
                         )
                         
-                        # --- STREAMING (AKIŞ) BAŞLATMA ---
+                        # Streaming response
                         response_stream = st.session_state.chat_session.send_message("Hadi incele.", stream=True)
-                        
-                        # Akış yer tutucusu
                         full_text = ""
                         message_placeholder = st.empty()
-                        
                         for chunk in response_stream:
                             full_text += chunk.text
-                            message_placeholder.markdown(full_text + "▌") # İmleç efekti
+                            message_placeholder.markdown(full_text + "▌")
+                        message_placeholder.markdown(full_text)
                         
-                        message_placeholder.markdown(full_text) # Son hali
-                        
-                        # Cevabı hafızaya al
                         st.session_state.messages.append({"role": "assistant", "content": full_text})
                         st.session_state.ilk_karsilama_yapildi = True
                         
-                        # Seslendirme (Yazı bittikten sonra gelir, akışı bozmaz)
                         if st.session_state.ses_aktif:
                             ses = metni_oku(full_text)
                             if ses: st.session_state.messages.append({"role": "audio", "content": ses})
@@ -244,13 +251,90 @@ if not st.session_state.chat_session:
                     except Exception as e:
                         st.error(f"Hata: {e}")
 
+    # --- B) KONUMATİK: YENİ KONU ÇALIŞMA ALANI ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### 🎯 Konumatik: Özel Çalışma Alanı")
+    st.info("Resim yüklemek zorunda değilsin! İstediğin konuyu yaz, Zekai sana özel içerik hazırlasın.")
+
+    with st.container(border=True):
+        konu_basligi = st.text_input("Hangi konuya çalışmak istersin?", placeholder="Örn: Hücre Bölünmesi, Kesirler, Fiilimsiler...")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        
+        buton_tiklandi = False
+        secilen_mod = None
+        
+        if c1.button("📝 5 Soru Test"):
+            secilen_mod = "5_soru"
+            buton_tiklandi = True
+        if c2.button("📝 10 Soru Test"):
+            secilen_mod = "10_soru"
+            buton_tiklandi = True
+        if c3.button("✍️ Yazılı Provası"):
+            secilen_mod = "yazili"
+            buton_tiklandi = True
+        if c4.button("📚 Konu Anlatımı"):
+            secilen_mod = "konu_anlatimi"
+            buton_tiklandi = True
+
+        if buton_tiklandi and isim and konu_basligi:
+            with st.spinner("Zekai içeriği hazırlıyor..."):
+                try:
+                    # Session yoksa başlat
+                    if not st.session_state.chat_session:
+                        system_prompt = f"Sen 'Zekai'. {sinif} öğrencisi {isim}'in koçusun. Konumuz: {konu_basligi}."
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        st.session_state.chat_session = model.start_chat(history=[{"role": "user", "parts": [system_prompt]}])
+                        st.session_state.ilk_karsilama_yapildi = True
+
+                    # Prompt Belirleme
+                    final_prompt = ""
+                    if secilen_mod == "5_soru":
+                        final_prompt = f"'{konu_basligi}' konusuyla ilgili 5 soruluk harika bir test hazırla. Cevap anahtarı en sonda olsun."
+                    elif secilen_mod == "10_soru":
+                        final_prompt = f"'{konu_basligi}' konusuyla ilgili 10 soruluk kapsamlı bir test hazırla. Cevap anahtarı en sonda olsun."
+                    elif secilen_mod == "yazili":
+                        final_prompt = f"'{konu_basligi}' konusuyla ilgili klasik (açık uçlu) yazılı sınav soruları hazırla. Sorular düşündürücü olsun. En sona örnek cevapları ekle."
+                    elif secilen_mod == "konu_anlatimi":
+                        final_prompt = f"'{konu_basligi}' konusunu bana {sinif} seviyesinde, eğlenceli, emojili ve maddeler halinde harika bir şekilde anlat. Unutmayacağım ipuçları ver."
+
+                    # Streaming ile cevap al
+                    response_stream = st.session_state.chat_session.send_message(final_prompt, stream=True)
+                    
+                    full_text = ""
+                    # Yer tutucu (Chat ekranına geçmeden önce burada gösterelim mi? 
+                    # Hayır, direkt chat geçmişine ekleyip rerun yaparsak daha doğal olur)
+                    # Ama streaming efekti için geçici bir alan kullanalım:
+                    stream_area = st.empty()
+                    for chunk in response_stream:
+                        full_text += chunk.text
+                        stream_area.markdown(full_text + "▌")
+                    stream_area.empty() # İş bitince burayı temizle
+                    
+                    # Mesajı geçmişe ekle
+                    st.session_state.messages.append({"role": "user", "content": f"⚡ **Mod:** {konu_basligi} hakkında {secilen_mod} istedim."})
+                    st.session_state.messages.append({"role": "assistant", "content": full_text})
+                    
+                    # Eğer konu test ise, cevap anahtarını gizlemek için özel state'e atabiliriz ama
+                    # şimdilik akışta kalması daha doğal.
+                    
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Hata: {e}")
+        elif buton_tiklandi and not isim:
+            st.warning("⚠️ Lütfen önce yukarıdan adını gir.")
+        elif buton_tiklandi and not konu_basligi:
+            st.warning("⚠️ Lütfen bir konu başlığı yaz.")
+
+
 # ==========================================
-# 6. SOHBET VE PRATİK ALANI
+# 6. SOHBET VE İÇERİK GÖSTERİMİ
 # ==========================================
 else:
     col_reset, col_dummy = st.columns([1, 2])
     with col_reset:
-        if st.button("🔄 Başka Soruya Geç", on_click=yeni_soru_yukle, type="secondary"):
+        if st.button("🔄 Başka Soruya/Konuya Geç", on_click=yeni_soru_yukle, type="secondary"):
             pass
 
     for message in st.session_state.messages:
@@ -260,45 +344,46 @@ else:
             with st.chat_message(message["role"], avatar="🧠" if message["role"] == "assistant" else "👤"):
                 st.markdown(message["content"])
 
-    # --- EKSTRA ÇALIŞMA ALANI ---
+    # --- EKSTRA ÇALIŞMA ALANI (Mevcut mantık) ---
     if st.session_state.messages and st.session_state.messages[-1]["role"] in ["assistant", "audio"]:
         st.markdown("<br>", unsafe_allow_html=True)
         
+        # Test veya Soru yoksa butonları göster
         if not st.session_state.yeni_pratik_soru and not st.session_state.hazirlanan_test:
             
-            st.caption("🚀 Kendini Denemek İster misin?")
-            soru_sayisi = st.radio("Test Uzunluğu:", [5, 10], horizontal=True, index=0)
-            col_meydan, col_test = st.columns(2)
+            # Burada Konumatik'ten gelen bir test varsa (mesajın içinde "CEVAP ANAHTARI" geçiyorsa) 
+            # ekstra buton göstermeyelim, zaten test var.
+            son_mesaj = st.session_state.messages[-1]["content"]
             
-            # MEYDAN OKU BUTONU
-            with col_meydan:
-                if st.button("🥊 Meydan Oku (Tek Soru)", use_container_width=True):
-                    with st.spinner("Hazırlanıyor..."):
-                        try:
-                            prompt = "Öğretmen sensin! Benzer, rakamları farklı YENİ BİR SORU yaz. Format:\n**SORU:** [Soru]\nA)...\nB)...\nC)...\nD)...\n**CEVAP_GIZLI:** [Cevap]"
-                            resp = st.session_state.chat_session.send_message(prompt) # Kısa cevaplar için stream'e gerek yok
-                            st.session_state.yeni_pratik_soru = resp.text
-                            st.rerun()
-                        except: st.error("Hata.")
+            if "CEVAP ANAHTARI" not in son_mesaj:
+                st.caption("🚀 Bu konuyu pekiştirelim mi?")
+                soru_sayisi = st.radio("Test Uzunluğu:", [5, 10], horizontal=True, index=0)
+                col_meydan, col_test = st.columns(2)
+                
+                with col_meydan:
+                    if st.button("🥊 Meydan Oku (Tek Soru)", use_container_width=True):
+                        with st.spinner("Hazırlanıyor..."):
+                            try:
+                                prompt = "Öğretmen sensin! Benzer YENİ BİR SORU yaz. Format:\n**SORU:** [Soru]\nA)...\nB)...\nC)...\nD)...\n**CEVAP_GIZLI:** [Cevap]"
+                                resp = st.session_state.chat_session.send_message(prompt)
+                                st.session_state.yeni_pratik_soru = resp.text
+                                st.rerun()
+                            except: st.error("Hata.")
 
-            # TEST HAZIRLA BUTONU
-            with col_test:
-                if st.button(f"📝 {soru_sayisi} Soruluk Test", use_container_width=True):
-                    with st.spinner(f"Hazırlanıyor..."):
-                        try:
-                            prompt = f"Konuyla ilgili {soru_sayisi} adet test sorusu hazırla. Cevap anahtarı en sonda olsun."
-                            resp_stream = st.session_state.chat_session.send_message(prompt, stream=True)
-                            
-                            # Testi de akışkan gösterelim
-                            full_test_txt = ""
-                            test_placeholder = st.empty()
-                            for chunk in resp_stream:
-                                full_test_txt += chunk.text
-                                test_placeholder.markdown(full_test_txt + "▌")
-                            
-                            st.session_state.hazirlanan_test = full_test_txt
-                            st.rerun()
-                        except: st.error("Hata.")
+                with col_test:
+                    if st.button(f"📝 {soru_sayisi} Soruluk Test", use_container_width=True):
+                        with st.spinner(f"Hazırlanıyor..."):
+                            try:
+                                prompt = f"Konuyla ilgili {soru_sayisi} adet test sorusu hazırla. Cevap anahtarı en sonda olsun."
+                                resp_stream = st.session_state.chat_session.send_message(prompt, stream=True)
+                                full_test_txt = ""
+                                test_placeholder = st.empty()
+                                for chunk in resp_stream:
+                                    full_test_txt += chunk.text
+                                    test_placeholder.markdown(full_test_txt + "▌")
+                                st.session_state.hazirlanan_test = full_test_txt
+                                st.rerun()
+                            except: st.error("Hata.")
 
         # --- GÖRÜNÜM: TEK SORU ---
         if st.session_state.yeni_pratik_soru:
@@ -354,18 +439,13 @@ else:
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_input)
 
-        # STREAMING CEVAP
         try:
             full_response = ""
             message_placeholder = st.empty()
-            
-            # stream=True ile çağırıyoruz
             response_stream = st.session_state.chat_session.send_message(user_input, stream=True)
-            
             for chunk in response_stream:
                 full_response += chunk.text
                 message_placeholder.markdown(full_response + "▌")
-            
             message_placeholder.markdown(full_response)
             
             st.session_state.messages.append({"role": "assistant", "content": full_response})
