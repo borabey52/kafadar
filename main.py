@@ -212,8 +212,8 @@ if not st.session_state.chat_session:
                         prompt_content.append(system_prompt)
                         for img in uploaded_images: prompt_content.append(compress_image(img))
                         
-                        # MODELİ HIZLANDIRMA: "gemini-1.5-flash" (En stabil hızlı versiyon)
-                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        # MODELİ HIZLANDIRMA: "gemini-flash-latest" (En stabil hızlı versiyon)
+                        model = genai.GenerativeModel("gemini-flash-latest")
                         st.session_state.chat_session = model.start_chat(
                             history=[{"role": "user", "parts": prompt_content}]
                         )
