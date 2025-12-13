@@ -5,6 +5,7 @@ import edge_tts
 import asyncio
 import io
 import re
+import base64
 
 # ==========================================
 # 1. AYARLAR & TASARIM (CSS)
@@ -14,6 +15,13 @@ st.set_page_config(page_title="Zekai", page_icon="🧠", layout="centered")
 st.markdown("""
     <style>
     .stApp { background-color: #fcfdfd; }
+    
+    /* --- ÜST BOŞLUĞU KALDIRMA --- */
+    /* Sayfanın en tepesindeki varsayılan boşluğu 6rem'den 2rem'e indirdik */
+    .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 200px; /* Alt kısım mikrofon için açık kalsın */
+    }
     
     /* Mesaj Baloncukları */
     .stChatMessage { border-radius: 10px; }
@@ -39,8 +47,6 @@ st.markdown("""
         background-color: rgba(252, 253, 253, 0.9);
         padding: 5px 20px; border-radius: 20px 20px 0 0; backdrop-filter: blur(5px);
     }
-    
-    .block-container { padding-bottom: 200px; }
     
     .footer {
         text-align: center; color: #888; font-size: 12px; margin-top: 50px; padding-bottom: 20px;
@@ -75,6 +81,11 @@ def compress_image(image):
     if img.width > 800 or img.height > 800:
         img.thumbnail((800, 800))
     return img
+
+def get_base64_image(image_path):
+    """Resmi HTML içinde kullanmak için Base64 formatına çevirir."""
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
 
 # State Tanımları
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -130,21 +141,25 @@ def metni_oku(metin):
         return None
 
 # ==========================================
-# 4. ARAYÜZ (GİRİŞ) - LOGO BURADA
+# 4. ARAYÜZ (GİRİŞ) - LOGO & SLOGAN
 # ==========================================
 
-# Logoyu ortalamak için kolon kullanıyoruz
-col_sol, col_orta, col_sag = st.columns([1, 6, 1])
-
-with col_orta:
-    try:
-        # 350px genişliğinde logoyu bas
-        st.image("zekai_logo.png", width=350)
-    except:
-        # Eğer resim henüz yüklenmediyse geçici başlık göster
-        st.title("🧠 Zekai")
-
-st.markdown("<h3 style='text-align: center; color: #566573; margin-bottom: 20px;'>Yeni Nesil Öğrenci Koçu</h3>", unsafe_allow_html=True)
+# Logoyu HTML/CSS ile tam ortaya koyuyoruz (Base64)
+try:
+    img_base64 = get_base64_image("zekai_logo.png")
+    st.markdown(
+        f"""
+        <div style="text-align: center; margin-bottom: 20px;">
+            <img src="data:image/png;base64,{img_base64}" width="400" style="max-width: 100%;">
+            <h3 style="color: #566573; margin-top: 10px; font-family: 'Comic Sans MS', sans-serif;">Yeni Nesil Zeki Öğrenci Koçu</h3>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+except:
+    # Eğer resim dosyası yoksa metin olarak göster (Fallback)
+    st.title("🧠 Zekai")
+    st.markdown("<h3 style='text-align: center; color: #566573;'>Yeni Nesil Zeki Öğrenci Koçu</h3>", unsafe_allow_html=True)
 
 st.info("👇 Önce kendini tanıt, sonra sorunu yükle:")
 
