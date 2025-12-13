@@ -116,7 +116,7 @@ def metni_temizle_tts_icin(text):
 def sesi_yaziya_cevir(audio_bytes):
     try:
         # MODEL GÜNCELLENDİ: gemini-1.5-flash-latest
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        model = genai.GenerativeModel("gemini-flash-latest") 
         response = model.generate_content([
             "Söylenenleri aynen yaz.",
             {"mime_type": "audio/wav", "data": audio_bytes}
@@ -228,7 +228,7 @@ if not st.session_state.chat_session:
                         for img in uploaded_images: prompt_content.append(compress_image(img))
                         
                         # MODEL GÜNCELLENDİ: gemini-1.5-flash-latest
-                        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+                        model = genai.GenerativeModel("gemini-flash-latest") 
                         st.session_state.chat_session = model.start_chat(
                             history=[{"role": "user", "parts": prompt_content}]
                         )
@@ -286,7 +286,7 @@ if not st.session_state.chat_session:
                     if not st.session_state.chat_session:
                         system_prompt = f"Sen 'Zekai'. {sinif} öğrencisi {isim}'in koçusun. Konumuz: {konu_basligi}."
                         # MODEL GÜNCELLENDİ: gemini-1.5-flash-latest
-                        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+                        model = genai.GenerativeModel("gemini-flash-latest") 
                         st.session_state.chat_session = model.start_chat(history=[{"role": "user", "parts": [system_prompt]}])
                         st.session_state.ilk_karsilama_yapildi = True
 
