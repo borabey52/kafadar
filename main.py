@@ -34,14 +34,14 @@ st.markdown("""
         background-color: #F1C40F; transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
     
-    /* Test Alanı Tasarımı */
-    .soru-karti {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 15px;
+    /* Soru Kartı Tasarımı */
+    .soru-container {
+        background-color: white;
         padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         margin-bottom: 20px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        border: 1px solid #eee;
     }
     
     [data-testid="stAudioInput"] {
@@ -253,31 +253,25 @@ if not st.session_state.chat_session:
         
         c1, c2, c3 = st.columns(3)
         
-        # Buton tanımları
         btn_interaktif = c1.button("📝 5 Soru İnteraktif Test")
         btn_yazili = c2.button("✍️ Yazılı Provası (5 Açık Uçlu)")
         btn_konu = c3.button("📚 Konu Anlatımı")
 
-        # --- İŞLEMLER ---
+        # --- İŞLEMLER (SADECE VERİ ÜRETİMİ) ---
         if (btn_interaktif or btn_yazili or btn_konu) and isim and konu_basligi:
             
             with st.spinner("Zekai içerik hazırlıyor..."):
                 try:
-                    # Session yoksa başlat
+                    # Session kontrol
                     if not st.session_state.chat_session:
                         system_prompt = f"Sen 'Zekai'. {sinif} öğrencisi {isim}'in koçusun. Konumuz: {konu_basligi}."
-                        # MODEL: gemini-flash-latest
                         model = genai.GenerativeModel("gemini-flash-latest")
                         st.session_state.chat_session = model.start_chat(history=[{"role": "user", "parts": [system_prompt]}])
                         st.session_state.ilk_karsilama_yapildi = True
 
-                    # ----------------------------------------
-                    # MOD 1: İNTERAKTİF TEST (VERİ OLUŞTURMA)
-                    # ----------------------------------------
+                    # 1. TEST VERİSİ HAZIRLAMA (JSON)
                     if btn_interaktif:
-                        # Eski veriyi temizle ki yeni test gelsin
-                        st.session_state.aktif_test_verisi = None
-                        
+                        st.session_state.aktif_test_verisi = None # Eskiyi sil
                         prompt = f"""
                         '{konu_basligi}' konusuyla ilgili {sinif} seviyesinde 5 adet çoktan seçmeli soru hazırla.
                         
@@ -286,29 +280,23 @@ if not st.session_state.chat_session:
                           {{
                             "soru": "Soru metni...",
                             "secenekler": ["A) ...", "B) ...", "C) ...", "D) ..."],
-                            "dogru_cevap": "Doğru olan seçenek (örn: A) ...)",
-                            "aciklama": "Neden doğru/yanlış olduğuna dair kısa açıklama."
+                            "dogru_cevap": "Doğru olan seçeneğin tam metni (örn: A) ...)",
+                            "aciklama": "Neden doğru/yanlış olduğuna dair açıklama."
                           }},
                           ...
                         ]
                         """
                         response = st.session_state.chat_session.send_message(prompt)
-                        
-                        # JSON Parse
                         text_data = response.text.replace("```json", "").replace("```", "").strip()
                         test_data = json.loads(text_data)
                         
-                        # Veriyi state'e kaydet (EKRANDA KALMASI İÇİN BU ŞART)
+                        # Veriyi kaydet (EKRANA BURADA BASMIYORUZ)
                         st.session_state.aktif_test_verisi = test_data
                         st.session_state.messages.append({"role": "user", "content": f"⚡ **Mod:** {konu_basligi} için İnteraktif Test başlattım."})
                     
-                    # ----------------------------------------
-                    # MOD 2 & 3: NORMAL METİN (STREAMING)
-                    # ----------------------------------------
+                    # 2. DİĞER MODLAR (STREAMING)
                     else:
-                        # Bu modlarda test verisini silelim ki ekranda kalabalık etmesin
-                        st.session_state.aktif_test_verisi = None
-                        
+                        st.session_state.aktif_test_verisi = None # Test modundan çık
                         final_prompt = ""
                         if btn_yazili:
                             final_prompt = f"'{konu_basligi}' konusuyla ilgili 5 adet klasik (açık uçlu) yazılı sınav sorusu hazırla. Sorular düşündürücü olsun. En sona örnek cevapları ekle."
@@ -316,7 +304,6 @@ if not st.session_state.chat_session:
                             final_prompt = f"'{konu_basligi}' konusunu bana {sinif} seviyesinde, eğlenceli, emojili ve maddeler halinde harika bir şekilde anlat. Unutmayacağım ipuçları ver."
 
                         response_stream = st.session_state.chat_session.send_message(final_prompt, stream=True)
-                        
                         full_text = ""
                         st.markdown("---")
                         stream_area = st.empty()
@@ -334,42 +321,46 @@ if not st.session_state.chat_session:
             st.warning("⚠️ Lütfen adını ve konu başlığını eksiksiz gir.")
 
     # ----------------------------------------------------------------------
-    # İNTERAKTİF TEST GÖSTERİM ALANI (BUTON BLOKLARINDAN BAĞIMSIZ)
+    # TEST GÖSTERİM ALANI (ANA AKIŞTA - KAYBOLMAZ)
     # ----------------------------------------------------------------------
-    # Bu kısım if bloklarının dışında olduğu için sayfa yenilense de çalışır.
-    
     if st.session_state.aktif_test_verisi:
         st.markdown("---")
-        st.subheader(f"📝 İnteraktif Test")
+        st.subheader(f"📝 {konu_basligi} - İnteraktif Test")
         
-        # Her soruyu bir konteyner içinde göster
+        # Her soru için döngü
         for i, soru_data in enumerate(st.session_state.aktif_test_verisi):
-            with st.container(border=True):
-                st.markdown(f"**Soru {i+1}:** {soru_data['soru']}")
+            
+            # Soru Kartı
+            with st.container():
+                st.markdown(f"##### {i+1}. {soru_data['soru']}")
                 
-                # Radio button state'ini korumak için unique key
+                # Seçenekler (Radio Button)
+                # Seçim yapıldığı an sayfa yenilenir (rerun) ve aşağıdaki if bloğu çalışır.
                 secim = st.radio(
-                    "Cevabınız:",
+                    "Cevabını seç:",
                     soru_data['secenekler'],
-                    key=f"test_soru_{i}",
-                    index=None
+                    key=f"test_q_{i}",
+                    index=None # Başlangıçta boş
                 )
                 
-                if st.button(f"Kontrol Et", key=f"btn_check_{i}"):
-                    if secim:
-                        # Seçilen şıkkın başındaki harfi veya içeriği kontrol edebiliriz
-                        # Genelde "A) ..." formatında geldiği için direkt string eşitliği yeterli olabilir
-                        # ama bazen Gemini "A) Cevap" derken JSON'da "A) Cevap" verir, eşleşir.
-                        
-                        if secim == soru_data['dogru_cevap']:
-                            st.success("✅ Tebrikler! Doğru cevap.")
-                            st.caption(f"💡 {soru_data['aciklama']}")
-                        else:
-                            st.error("❌ Yanlış cevap.")
-                            st.warning(f"👉 Doğru Cevap: {soru_data['dogru_cevap']}")
-                            st.info(f"ℹ️ **Açıklama:** {soru_data['aciklama']}")
+                # ANINDA DÖNÜT (Seçim yapıldıysa göster)
+                if secim:
+                    # Doğru mu?
+                    dogru_mu = (secim == soru_data['dogru_cevap']) or (secim.split(")")[0] == soru_data['dogru_cevap'].split(")")[0])
+                    
+                    if dogru_mu:
+                        st.success("🎉 Tebrikler! Doğru Cevap.")
+                        # Doğruysa açıklamayı expander içinde göster
+                        with st.expander("💡 Neden Doğru? (Açıklama)"):
+                            st.write(soru_data['aciklama'])
                     else:
-                        st.warning("Lütfen bir şık seç.")
+                        st.error("❌ Yanlış Cevap.")
+                        # Yanlışsa doğru cevabı ve açıklamayı göster
+                        with st.expander("👀 Doğru Cevabı ve Açıklamayı Gör"):
+                            st.info(f"👉 **Doğru Cevap:** {soru_data['dogru_cevap']}")
+                            st.write(f"**Açıklama:** {soru_data['aciklama']}")
+                
+                st.markdown("---")
 
 
 # ==========================================
