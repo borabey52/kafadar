@@ -267,7 +267,7 @@ if not st.session_state.chat_session:
             secilen_mod = "5_soru"
             buton_tiklandi = True
             
-        if c2.button("✍️ Yazılı Provası (5 Açık Uçlu)"):
+        if c2.button("✍️ (5 Yazılı Sorusu)"):
             secilen_mod = "yazili"
             buton_tiklandi = True
             
