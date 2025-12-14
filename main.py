@@ -193,7 +193,7 @@ if st.button("🚀 KAĞITLARI OKUT VE PUANLA", type="primary", use_container_wid
     else:
         # Model Ayarları
         genai.configure(api_key=SABIT_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-flash-latest")
 
         is_paketleri = []
         adim = 2 if "Çift" in sayfa_tipi and len(tum_gorseller) > 1 else 1
