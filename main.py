@@ -1,379 +1,359 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
-import edge_tts
-import asyncio
-import io
-import re
-import base64
+import json
 import time
+import pandas as pd
+import io
+import base64
+import re
+import streamlit.components.v1 as components # <--- YENİ EKLENDİ (Kaydırma için)
 
 # ==========================================
-# 1. AYARLAR & CSS TASARIMI 🎨
+# 1. AYARLAR & TASARIM
 # ==========================================
-st.set_page_config(page_title="Zekai", page_icon="🧠", layout="centered")
+st.set_page_config(page_title="OkutAİ - Akıllı Sınav Okuma", layout="wide", page_icon="📑")
 
 st.markdown("""
     <style>
-    .stApp { background-color: #fcfdfd; }
-    
-    .block-container {
-        padding-top: 2rem !important;
-        padding-bottom: 250px;
+    /* --- GÖRSEL EŞİTLEME --- */
+    .stTextArea label, .stRadio label, .stFileUploader label p {
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        color: #31333F !important;
+    }
+    .stTabs button {
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        color: #31333F !important;
+    }
+    [data-testid="stFileUploaderDropzone"] button {
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        color: #31333F !important;
     }
     
-    .stChatMessage { border-radius: 10px; }
+    /* BUTON RENKLERİ */
+    button[kind="primary"] { color: white !important; }
+    button[kind="secondary"] { color: #333 !important; border-color: #dcdcdc !important; }
     
-    /* Genel Buton Stili */
-    .stButton>button {
-        background-color: #F4D03F; color: #17202A; border-radius: 15px;
-        font-weight: bold; border: none; padding: 12px 24px; transition: all 0.3s;
-        width: 100%;
-        border: 2px solid transparent;
-    }
-    .stButton>button:hover {
-        background-color: #F1C40F; transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
+    /* DÜZEN */
+    .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; }
+    header[data-testid="stHeader"] { background-color: transparent; }
+    [data-testid="stSidebarUserContent"] { padding-top: 2rem !important; }
     
-    /* Konumatik Alanı Özel Tasarımı */
-    .konu-box {
-        background-color: #ebf5fb;
-        border: 2px solid #3498db;
-        border-radius: 15px;
-        padding: 20px;
-        margin-top: 20px;
-        margin-bottom: 20px;
+    /* SOL MENÜ */
+    [data-testid="stSidebarNav"] a {
+        background-color: #f0f2f6; padding: 15px; border-radius: 10px;
+        margin-bottom: 10px; text-decoration: none !important;
+        color: #002D62 !important; font-weight: 700; display: block;
+        text-align: center; border: 1px solid #dcdcdc; transition: all 0.3s;
+    }
+    [data-testid="stSidebarNav"] a:hover {
+        background-color: #e6e9ef; transform: scale(1.02);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-color: #b0b0b0;
     }
     
-    [data-testid="stTextInput"] > div > div { border: none !important; background-color: #f0f2f6; border-radius: 10px; }
-    [data-testid="stSelectbox"] > div > div { border: none !important; background-color: #f0f2f6; border-radius: 10px; }
-    
-    /* MİKROFON SABİTLEME */
-    [data-testid="stAudioInput"] {
-        position: fixed; bottom: 110px; left: 0; right: 0; margin: 0 auto;
-        width: 100%; max-width: 700px; z-index: 999;
-        background-color: rgba(252, 253, 253, 0.95);
-        padding: 10px 20px; border-radius: 20px 20px 0 0; border-top: 1px solid #eee;
-        backdrop-filter: blur(5px);
+    /* KAMERA */
+    div[data-testid="stCameraInput"] button { color: transparent !important; }
+    div[data-testid="stCameraInput"] button::after {
+        content: "📸 TARAT"; color: #333; font-weight: bold; position: absolute; left:0; right:0; top:0; bottom:0; display: flex; align-items: center; justify-content: center;
     }
     
-    .footer { text-align: center; color: #888; font-size: 12px; margin-top: 50px; padding-bottom: 20px; }
+    /* DETAYLAR */
+    .streamlit-expanderHeader {
+        font-weight: bold; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 5px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. API BAĞLANTISI
-# ==========================================
+# API Anahtarı
 if "GOOGLE_API_KEY" in st.secrets:
-    api_key = st.secrets["GOOGLE_API_KEY"]
+    SABIT_API_KEY = st.secrets["GOOGLE_API_KEY"]
 else:
-    st.error("🚨 API Anahtarı Bulunamadı!")
-    st.stop()
+    SABIT_API_KEY = ""
 
-genai.configure(api_key=api_key)
-
-# ==========================================
-# 3. FONKSİYONLAR
-# ==========================================
-def compress_image(image):
-    img = image.copy()
-    if img.width > 800 or img.height > 800:
-        img.thumbnail((800, 800))
-    return img
-
-def get_base64_image(image_path):
-    try:
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
-    except:
-        return None
-
-# State Tanımları
-if "messages" not in st.session_state: st.session_state.messages = []
-if "chat_session" not in st.session_state: st.session_state.chat_session = None
+# --- HAFIZA ---
+if 'sinif_verileri' not in st.session_state: st.session_state.sinif_verileri = []
 if 'kamera_acik' not in st.session_state: st.session_state.kamera_acik = False
-if 'ses_aktif' not in st.session_state: st.session_state.ses_aktif = True
-if 'ilk_karsilama_yapildi' not in st.session_state: st.session_state.ilk_karsilama_yapildi = False
 
-def yeni_soru_yukle():
-    st.session_state.messages = []
-    st.session_state.chat_session = None
-    st.session_state.kamera_acik = False
+def tam_hafiza_temizligi():
+    st.session_state.sinif_verileri = []
+    st.toast("🧹 Liste temizlendi!", icon="🗑️")
+    st.rerun()
 
-def metni_temizle_tts_icin(text):
-    text = re.sub(r'(?i)cevap', 'yanıt', text)
-    text = re.sub(r'(?i)cevab', 'yanıt', text)
-    text = text.replace("#", "").replace("*", "")
-    temiz_text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞIÖŞÜ\s\.,!\?\-':;]", "", text)
-    return temiz_text.strip()
+def kamera_durumunu_degistir():
+    st.session_state.kamera_acik = not st.session_state.kamera_acik
 
-def sesi_yaziya_cevir(audio_bytes):
-    try:
-        model = genai.GenerativeModel("gemini-flash-latest")
-        response = model.generate_content([
-            "Söylenenleri aynen yaz.",
-            {"mime_type": "audio/wav", "data": audio_bytes}
-        ])
-        return response.text.strip()
-    except:
-        return None
+def extract_json(text):
+    text = text.strip()
+    if "```" in text:
+        try:
+            text = re.split(r"```(?:json)?", text)[1].split("```")[0]
+        except:
+            pass
+    
+    start = text.find('{')
+    end = text.rfind('}') + 1
+    if start != -1 and end != 0:
+        return text[start:end]
+    return text
 
-async def seslendir_async(metin, ses="tr-TR-EmelNeural"):
-    communicate = edge_tts.Communicate(metin, ses)
-    mp3_fp = io.BytesIO()
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            mp3_fp.write(chunk["data"])
-    mp3_fp.seek(0)
-    return mp3_fp
-
-def metni_oku(metin):
-    try:
-        temiz_metin = metni_temizle_tts_icin(metin)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        ses_dosyasi = loop.run_until_complete(seslendir_async(temiz_metin))
-        return ses_dosyasi
-    except:
-        return None
+def get_img_as_base64(file):
+    with open(file, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
 
 # ==========================================
-# 4. ARAYÜZ (GİRİŞ)
+# 2. ARAYÜZ (HEADER)
 # ==========================================
-img_base64 = get_base64_image("zekai_logo.png")
-if img_base64:
+
+with st.sidebar:
+    st.header("⚙️ Durum")
+    st.info(f"📂 Okunan: **{len(st.session_state.sinif_verileri)}**")
+    if len(st.session_state.sinif_verileri) > 0:
+        if st.button("🚨 Listeyi Sıfırla", type="primary", use_container_width=True):
+            tam_hafiza_temizligi()
+    st.divider()
+    st.caption("OkutAİ v1.21 - AutoScroll")
+
+try:
+    img_base64 = get_img_as_base64("okutai_logo.png") 
     st.markdown(
-        f"""<div style="text-align: center; margin-bottom: 20px;">
-            <img src="data:image/png;base64,{img_base64}" width="400" style="max-width: 100%; height: auto;">
-            <h3 style="color: #566573; margin-top: 10px; font-family: 'Comic Sans MS', sans-serif;">Yeni Nesil Zeki Öğrenci Koçu</h3>
-        </div>""", unsafe_allow_html=True
+        f"""
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            <img src="data:image/png;base64,{img_base64}" width="350" style="margin-bottom: 5px;">
+            <h3 style='color: #002D62; margin: 0; font-size: 1.5rem; font-weight: 800;'>Sen Okut, O Puanlasın.</h3>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
-else:
-    st.title("🧠 Zekai")
-    st.markdown("<h3 style='text-align: center; color: #566573;'>Yeni Nesil Zeki Öğrenci Koçu</h3>", unsafe_allow_html=True)
-
-st.info("👇 Önce kendini tanıt, sonra sorunu yükle:")
-
-col1, col2 = st.columns(2)
-with col1:
-    isim = st.text_input("Adın ne?", placeholder="Örn: Ali")
-with col2:
-    sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
-
-with st.expander("⚙️ Ses Ayarı", expanded=False):
-    st.session_state.ses_aktif = st.toggle("🔊 Zekai Sesli Konuşsun", value=True)
+except:
+    st.markdown("""
+        <h1 style='text-align: center; color: #002D62;'>Okut<span style='color: #00aaff;'>Aİ</span></h1>
+        <h3 style='text-align: center;'>Sen Okut, O Puanlasın.</h3>
+        """, unsafe_allow_html=True)
 
 st.markdown("---")
 
 # ==========================================
-# 5. İÇERİK OLUŞTURMA ALANI
+# 3. İŞLEM ALANI
 # ==========================================
-if not st.session_state.chat_session:
-    
-    # --- A) DOSYA YÜKLEME ALANI ---
-    tab1, tab2 = st.tabs(["📂 Dosyadan Yükle (Çoklu)", "📸 Kamerayı Kullan"])
-    uploaded_images = []
-    
-    with tab1:
-        dosyalar = st.file_uploader("Kağıtları Seç", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
-        if dosyalar:
-            for d in dosyalar: uploaded_images.append(Image.open(d))
+col_sol, col_sag = st.columns([1, 1], gap="large")
 
-    with tab2:
-        if st.button("📸 Kamerayı Aç / Kapat", key="cam_toggle"):
-            st.session_state.kamera_acik = not st.session_state.kamera_acik
-            st.rerun()
+with col_sol:
+    st.header("1. Sınav Ayarları")
+    ogretmen_promptu = st.text_area("Öğretmen Notu / Puanlama Kriteri:", height=100, placeholder="Ör: Yazım hataları -1 puan, anlam bütünlüğü önemli...")
+    sayfa_tipi = st.radio("Her Öğrenci Kaç Sayfa?", ["Tek Sayfa (Sadece Ön)", "Çift Sayfa (Ön + Arka)"], horizontal=True)
+    
+    with st.expander("Cevap Anahtarı (Opsiyonel)"):
+        rubrik_dosyasi = st.file_uploader("Cevap Anahtarı Yükle", type=["jpg", "png", "jpeg"], key="rubrik")
+        rubrik_img = Image.open(rubrik_dosyasi) if rubrik_dosyasi else None
+
+with col_sag:
+    st.header("2. Kağıt Yükleme")
+    
+    tab_dosya, tab_kamera = st.tabs(["📂 Dosya Yükle", "📸 Kamera"])
+    
+    uploaded_files = []
+    camera_file = None
+    
+    with tab_dosya:
+        st.info("Galeriden çoklu seçim yapabilirsiniz.")
+        uploaded_files_list = st.file_uploader("Okutulacak Kağıtları Seç", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
+        if uploaded_files_list: uploaded_files = uploaded_files_list
+            
+    with tab_kamera:
         if st.session_state.kamera_acik:
-            kamera_img = st.camera_input("Fotoğraf Çek", label_visibility="hidden")
-            if kamera_img: uploaded_images.append(Image.open(kamera_img))
-
-    # Resim varsa "İncele" butonu çıkar
-    if uploaded_images:
-        st.success(f"✅ {len(uploaded_images)} sayfa alındı!")
-        cols = st.columns(min(len(uploaded_images), 4))
-        for i, img in enumerate(uploaded_images[:4]):
-            cols[i].image(img, width=100, caption=f"Sayfa {i+1}")
-
-        if st.button("🚀 ZEKAİ İNCELE", type="primary"):
-            if not isim:
-                st.warning("⚠️ Lütfen adını yaz.")
-            else:
-                with st.spinner("Zekai jet hızında inceliyor... 🚀"):
-                    try:
-                        hitap_kurali = ""
-                        if st.session_state.ilk_karsilama_yapildi == False:
-                            hitap_kurali = f"GİRİŞ: '{isim}, merhaba! Ben Zekai. Hadi şu kağıtlara birlikte bakalım.' şeklinde sıcak bir giriş yap."
-                        else:
-                            hitap_kurali = f"GİRİŞ: Tekrar merhaba demene gerek yok. Sanki az önce konuşuyormuşuz gibi devam et."
-
-                        prompt_content = []
-                        system_prompt = f"""
-                        Senin adın 'Zekai'. {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
-                        {hitap_kurali}
-                        GÖREVLERİN:
-                        1. Dersi/konuyu anla.
-                        2. (PUANLAMA) 5+ soru veya yazılı kağıdıysa: Doğru/Yanlış analizi yap ve 100 üzerinden not ver.
-                        3. Boşsa: Çözüm yolunu anlat (CEVABI DİREKT VERME).
-                        4. Çözülmüşse: Kontrol et, yanlışsa ipucu ver.
-                        TONU: Samimi, emojili, motive edici.
-                        """
-                        prompt_content.append(system_prompt)
-                        for img in uploaded_images: prompt_content.append(compress_image(img))
-                        
-                        model = genai.GenerativeModel("gemini-flash-latest")
-                        st.session_state.chat_session = model.start_chat(
-                            history=[{"role": "user", "parts": prompt_content}]
-                        )
-                        
-                        # Streaming response
-                        response_stream = st.session_state.chat_session.send_message("Hadi incele.", stream=True)
-                        full_text = ""
-                        message_placeholder = st.empty()
-                        for chunk in response_stream:
-                            full_text += chunk.text
-                            message_placeholder.markdown(full_text + "▌")
-                        message_placeholder.markdown(full_text)
-                        
-                        st.session_state.messages.append({"role": "assistant", "content": full_text})
-                        st.session_state.ilk_karsilama_yapildi = True
-                        
-                        if st.session_state.ses_aktif:
-                            ses = metni_oku(full_text)
-                            if ses: st.session_state.messages.append({"role": "audio", "content": ses})
-                            st.rerun()
-                        
-                    except Exception as e:
-                        st.error(f"Hata: {e}")
-
-    # --- B) KONUMATİK: YENİ KONU ÇALIŞMA ALANI ---
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("### 🎯 Konumatik: Özel Çalışma Alanı")
-    st.info("Resim yüklemek zorunda değilsin! İstediğin konuyu yaz, Zekai sana özel içerik hazırlasın.")
-
-    with st.container(border=True):
-        konu_basligi = st.text_input("Hangi konuya çalışmak istersin?", placeholder="Örn: Hücre Bölünmesi, Kesirler, Fiilimsiler...")
-        
-        # SADECE 3 BUTON KALDI (10 Soru kalktı)
-        c1, c2, c3 = st.columns(3)
-        
-        buton_tiklandi = False
-        secilen_mod = None
-        
-        if c1.button("📝 5 Soru Test"):
-            secilen_mod = "5_soru"
-            buton_tiklandi = True
-            
-        # Yazılı Provasi artık 5 açık uçlu soru soracak
-        if c2.button("✍️ Yazılı Provası (5 Açık Uçlu)"):
-            secilen_mod = "yazili"
-            buton_tiklandi = True
-            
-        if c3.button("📚 Konu Anlatımı"):
-            secilen_mod = "konu_anlatimi"
-            buton_tiklandi = True
-
-        if buton_tiklandi and isim and konu_basligi:
-            with st.spinner("Zekai içeriği hazırlıyor..."):
-                try:
-                    # Session yoksa başlat
-                    if not st.session_state.chat_session:
-                        system_prompt = f"Sen 'Zekai'. {sinif} öğrencisi {isim}'in koçusun. Konumuz: {konu_basligi}."
-                        model = genai.GenerativeModel("gemini-flash-latest")
-                        st.session_state.chat_session = model.start_chat(history=[{"role": "user", "parts": [system_prompt]}])
-                        st.session_state.ilk_karsilama_yapildi = True
-
-                    # Prompt Belirleme
-                    final_prompt = ""
-                    if secilen_mod == "5_soru":
-                        final_prompt = f"'{konu_basligi}' konusuyla ilgili 5 soruluk harika bir test hazırla. Cevap anahtarı en sonda olsun."
-                    
-                    elif secilen_mod == "yazili":
-                        # İSTEK: 5 adet açık uçlu soru
-                        final_prompt = f"'{konu_basligi}' konusuyla ilgili 5 adet klasik (açık uçlu) yazılı sınav sorusu hazırla. Sorular düşündürücü olsun. En sona örnek cevapları ekle."
-                    
-                    elif secilen_mod == "konu_anlatimi":
-                        final_prompt = f"'{konu_basligi}' konusunu bana {sinif} seviyesinde, eğlenceli, emojili ve maddeler halinde harika bir şekilde anlat. Unutmayacağım ipuçları ver."
-
-                    # Streaming ile cevap al
-                    response_stream = st.session_state.chat_session.send_message(final_prompt, stream=True)
-                    
-                    full_text = ""
-                    stream_area = st.empty()
-                    for chunk in response_stream:
-                        full_text += chunk.text
-                        stream_area.markdown(full_text + "▌")
-                    stream_area.empty()
-                    
-                    # Mesajı geçmişe ekle
-                    st.session_state.messages.append({"role": "user", "content": f"⚡ **Mod:** {konu_basligi} hakkında {secilen_mod} istedim."})
-                    st.session_state.messages.append({"role": "assistant", "content": full_text})
-                    
-                    st.rerun()
-
-                except Exception as e:
-                    st.error(f"Hata: {e}")
-        elif buton_tiklandi and not isim:
-            st.warning("⚠️ Lütfen önce yukarıdan adını gir.")
-        elif buton_tiklandi and not konu_basligi:
-            st.warning("⚠️ Lütfen bir konu başlığı yaz.")
-
-
-# ==========================================
-# 6. SOHBET VE İÇERİK GÖSTERİMİ
-# ==========================================
-else:
-    col_reset, col_dummy = st.columns([1, 2])
-    with col_reset:
-        if st.button("🔄 Başka Soruya/Konuya Geç", on_click=yeni_soru_yukle, type="secondary"):
-            pass
-
-    for message in st.session_state.messages:
-        if message["role"] == "audio":
-            st.audio(message["content"], format="audio/mp3")
+            if st.button("❌ Kamerayı Kapat", type="secondary", use_container_width=True):
+                kamera_durumunu_degistir()
+                st.rerun()
+            camera_input = st.camera_input("Fotoğrafı Çek")
+            if camera_input: camera_file = camera_input
         else:
-            with st.chat_message(message["role"], avatar="🧠" if message["role"] == "assistant" else "👤"):
-                st.markdown(message["content"])
+            if st.button("📸 Kamerayı Başlat", type="primary", use_container_width=True):
+                kamera_durumunu_degistir()
+                st.rerun()
 
-    # --- ESKİ MEYDAN OKUMA BUTONLARI KALDIRILDI ---
-    # Kullanıcı isteği üzerine pekiştirme/meydan okuma alanı temizlendi.
-    # Sohbet sadece chat input ve mikrofon ile devam ediyor.
+# ==========================================
+# 4. İŞLEM BUTONU VE MOTORU
+# ==========================================
+st.markdown("---")
 
-    # --- FOOTER ---
-    st.markdown("""<div class="footer">© Zekai uygulaması <b>Sinan Sayılır</b> tarafından geliştirilmiştir.</div>""", unsafe_allow_html=True)
+if st.button("🚀 KAĞITLARI OKUT VE PUANLA", type="primary", use_container_width=True):
+    
+    tum_gorseller = []
+    if uploaded_files: tum_gorseller.extend(uploaded_files)
+    if camera_file: tum_gorseller.append(camera_file)
+    
+    if not SABIT_API_KEY:
+        st.error("API Anahtarı Eksik!")
+    elif not tum_gorseller:
+        st.warning("Lütfen dosya yükleyin veya fotoğraf çekin.")
+    else:
+        # Model Ayarları
+        genai.configure(api_key=SABIT_API_KEY)
+        model = genai.GenerativeModel("gemini-1.5-flash")
 
-    # --- INPUT ALANLARI ---
-    user_input = None
-    audio_input = st.audio_input("🎤 Sesli Sor", label_visibility="collapsed")
-    text_input = st.chat_input("Anlamadığın yeri yaz...")
+        is_paketleri = []
+        adim = 2 if "Çift" in sayfa_tipi and len(tum_gorseller) > 1 else 1
+        sorted_files = sorted(tum_gorseller, key=lambda x: x.name if hasattr(x, 'name') else "camera")
 
-    if text_input: user_input = text_input
-    if audio_input:
-        with st.spinner("Ses işleniyor..."):
-            audio_bytes = audio_input.read()
-            transcribed_text = sesi_yaziya_cevir(audio_bytes)
-            if transcribed_text: user_input = transcribed_text
-            else: st.error("Ses anlaşılamadı.")
+        for i in range(0, len(sorted_files), adim):
+            paket = sorted_files[i : i + adim]
+            if len(paket) > 0:
+                img_paket = [Image.open(f) for f in paket]
+                is_paketleri.append(img_paket)
 
-    if user_input:
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.chat_message("user", avatar="👤"):
-            st.markdown(user_input)
+        progress_bar = st.progress(0)
+        durum_text = st.empty()
+        toplam_paket = len(is_paketleri)
+        basarili = 0
 
-        try:
-            full_response = ""
-            message_placeholder = st.empty()
-            response_stream = st.session_state.chat_session.send_message(user_input, stream=True)
-            for chunk in response_stream:
-                full_response += chunk.text
-                message_placeholder.markdown(full_response + "▌")
-            message_placeholder.markdown(full_response)
+        for index, images in enumerate(is_paketleri):
+            durum_text.write(f"⏳ Taranıyor: {index + 1}. Öğrenci / {toplam_paket}...")
             
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            try:
+                # Prompt
+                prompt = ["""
+                Sen uzman bir öğretmensin. Sınav kağıdını değerlendir.
+                
+                GÖREVLER:
+                1. KAĞIDI TANI: İsim, Numara ve Soruları bul.
+                2. SORULARI EŞLEŞTİR: Kağıt çok sayfalıysa soruları sıraya koy.
+                
+                3. PUANLAMA:
+                   - Kağıtta puan yazıyorsa onu kullan.
+                   - Yazmıyorsa soru sayısına göre eşit dağıt (Örn: 10 soru = her biri 10 puan).
+                   - Yanlışlara 0 ver.
+                
+                4. ÇIKTI FORMATI:
+                SADECE şu JSON formatını kullan:
+                { 
+                  "kimlik": {"ad_soyad": "Öğrenci Adı", "numara": "123"}, 
+                  "degerlendirme": [
+                    {"no":"1", "soru":"...", "cevap":"...", "puan":10, "tam_puan":10, "yorum":"..."}
+                  ] 
+                }
+                """]
+                
+                if ogretmen_promptu: prompt.append(f"ÖĞRETMEN NOTU: {ogretmen_promptu}")
+                if rubrik_img: prompt.extend(["CEVAP ANAHTARI:", rubrik_img])
+                prompt.append("KAĞITLAR:")
+                prompt.extend(images)
+
+                response = model.generate_content(prompt)
+                
+                # Temizlik
+                json_text = extract_json(response.text)
+                if not json_text: raise ValueError("Boş cevap.")
+                data = json.loads(json_text)
+                
+                kimlik = data.get("kimlik", {})
+                sorular = data.get("degerlendirme", [])
+                
+                # Puan Hesapla
+                toplam_puan = 0
+                for s in sorular:
+                    try:
+                        p = float(str(s.get('puan', 0)).replace(',', '.'))
+                        toplam_puan += p
+                    except: pass
+                
+                kayit = {
+                    "Ad Soyad": kimlik.get("ad_soyad", f"Öğrenci {index+1}"), 
+                    "Numara": kimlik.get("numara", "-"), 
+                    "Toplam Puan": toplam_puan,
+                    "Detaylar": sorular
+                }
+                
+                for s in sorular: 
+                    kayit[f"Soru {s.get('no')}"] = s.get('puan', 0)
+
+                st.session_state.sinif_verileri.append(kayit)
+                basarili += 1
+
+            except Exception as e:
+                st.error(f"⚠️ Hata: {e}")
             
-            if st.session_state.ses_aktif:
-                ses_verisi = metni_oku(full_response)
-                if ses_verisi:
-                    st.audio(ses_verisi, format="audio/mp3", autoplay=True)
-                    st.session_state.messages.append({"role": "audio", "content": ses_verisi})
-        except Exception as e:
-            st.error(f"Hata: {e}")
+            progress_bar.progress((index + 1) / toplam_paket)
+            time.sleep(1)
+
+        durum_text.success(f"✅ İşlem tamam! {basarili} kağıt okundu.")
+        st.balloons()
+        time.sleep(1)
+        st.rerun()
+
+# ==========================================
+# 5. SONUÇ LİSTESİ
+# ==========================================
+if len(st.session_state.sinif_verileri) > 0:
+    
+    # --- YUKARI KAYDIRMA (AUTO SCROLL) KODU ---
+    # Bu kod çalıştığında tarayıcı otomatik olarak en üste kayar
+    components.html(
+        """
+        <script>
+            window.parent.document.querySelector('section.main').scrollTo(0, 0);
+        </script>
+        """,
+        height=0
+    )
+    # ------------------------------------------
+
+    st.markdown("### 📝 Sınıf Sonuçları")
+    
+    for i, ogrenci in enumerate(st.session_state.sinif_verileri):
+        baslik = f"📄 {ogrenci['Ad Soyad']} (No: {ogrenci['Numara']}) | Puan: {int(ogrenci['Toplam Puan'])}"
+        
+        with st.expander(baslik, expanded=False):
+            if "Detaylar" in ogrenci:
+                for soru in ogrenci["Detaylar"]:
+                    try:
+                        puan = float(str(soru.get('puan', 0)).replace(',', '.'))
+                        tam_puan = float(str(soru.get('tam_puan', 0)).replace(',', '.'))
+                    except:
+                        puan = 0; tam_puan = 0
+                    
+                    if puan == tam_puan and tam_puan > 0:
+                        renk = "green"; ikon = "✅"
+                    elif puan == 0:
+                        renk = "red"; ikon = "❌"
+                    else:
+                        renk = "orange"; ikon = "⚠️"
+                    
+                    p_goster = int(puan) if puan.is_integer() else puan
+                    tp_goster = int(tam_puan) if tam_puan.is_integer() else tam_puan
+
+                    st.markdown(f"**Soru {soru.get('no')}** - {ikon} :{renk}[**{p_goster}** / {tp_goster}]")
+                    st.info(f"**Öğrenci Cevabı:** {soru.get('cevap')}")
+                    
+                    st.markdown(f"""
+                    <div style="background-color: #f0f8ff; padding: 10px; border-radius: 5px; border-left: 5px solid #002D62; margin-bottom: 5px;">
+                        <span style="font-weight:bold; color:#002D62;">🤖 OkutAİ Yorumu:</span><br>
+                        <span style="font-size: 16px; color: #222;">{soru.get('yorum')}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.divider() 
+
+    # Excel İndirme
+    st.markdown("---")
+    df_excel = pd.DataFrame(st.session_state.sinif_verileri)
+    if "Detaylar" in df_excel.columns: df_excel = df_excel.drop(columns=["Detaylar"])
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_excel.to_excel(writer, index=False, sheet_name='Sonuclar')
+        
+    st.download_button("📥 Excel Olarak İndir", data=output.getvalue(), file_name='OkutAI_Sonuclari.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', type="primary", use_container_width=True)
+
+# Footer
+st.markdown("---")
+st.markdown("""
+    <div style='text-align: center; margin-top: 50px; margin-bottom: 20px; color: #666;'>
+        <p style='font-size: 18px; font-weight: 600;'>
+            © 2024 OkutAİ - Sinan Sayılır tarafından geliştirilmiştir.
+        </p>
+        <p style='font-size: 14px;'>Sen Okut, O Puanlasın.</p>
+    </div>
+""", unsafe_allow_html=True)
