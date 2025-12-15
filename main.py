@@ -1,12 +1,11 @@
 import streamlit as st
+import streamlit.components.v1 as components  # JavaScript çalıştırmak için gerekli
 import google.generativeai as genai
 from PIL import Image
-import edge_tts
-import asyncio
-import io
 import re
 import base64
 import json
+import time
 
 # ==========================================
 # 1. AYARLAR & CSS TASARIMI 🎨
@@ -84,6 +83,48 @@ def get_base64_image(image_path):
     except:
         return None
 
+# --- YENİ: TARAYICI TABANLI SESLENDİRME (JAVASCRIPT) ---
+def browser_tts(text, lang='tr-TR'):
+    """
+    Metni tarayıcının yerel ses motorunu kullanarak seslendirir.
+    Maliyet: 0 TL.
+    """
+    # Metindeki tırnak işaretlerini ve yeni satırları temizle (JS hatası olmasın diye)
+    clean_text = text.replace('"', '').replace("'", "").replace("\n", " ")
+    
+    js_code = f"""
+    <script>
+        function speakText() {{
+            // Önceki konuşmayı durdur
+            window.speechSynthesis.cancel();
+            
+            var msg = new SpeechSynthesisUtterance();
+            msg.text = "{clean_text}";
+            msg.lang = "{lang}";
+            msg.rate = 1.0; // Hız
+            msg.pitch = 1.0; // Ton
+            
+            // Konuş
+            window.speechSynthesis.speak(msg);
+        }}
+        // Sayfa yüklendiğinde (veya bu fonksiyon çağrıldığında) çalıştır
+        speakText();
+    </script>
+    """
+    # JS kodunu sayfaya gömüyoruz (Görünmez iframe içinde çalışır)
+    components.html(js_code, height=0, width=0)
+
+def sesi_yaziya_cevir(audio_bytes):
+    try:
+        model = genai.GenerativeModel("gemini-flash-latest")
+        response = model.generate_content([
+            "Söylenenleri aynen yaz.",
+            {"mime_type": "audio/wav", "data": audio_bytes}
+        ])
+        return response.text.strip()
+    except:
+        return None
+
 # State Tanımları
 if "messages" not in st.session_state: st.session_state.messages = []
 if "chat_session" not in st.session_state: st.session_state.chat_session = None
@@ -97,43 +138,6 @@ def yeni_soru_yukle():
     st.session_state.chat_session = None
     st.session_state.kamera_acik = False
     st.session_state.aktif_test_verisi = None
-
-def metni_temizle_tts_icin(text):
-    text = re.sub(r'(?i)cevap', 'yanıt', text)
-    text = re.sub(r'(?i)cevab', 'yanıt', text)
-    text = text.replace("#", "").replace("*", "")
-    temiz_text = re.sub(r"[^a-zA-Z0-9çğıöşüÇĞIÖŞÜ\s\.,!\?\-':;]", "", text)
-    return temiz_text.strip()
-
-def sesi_yaziya_cevir(audio_bytes):
-    try:
-        model = genai.GenerativeModel("gemini-flash-latest")
-        response = model.generate_content([
-            "Söylenenleri aynen yaz.",
-            {"mime_type": "audio/wav", "data": audio_bytes}
-        ])
-        return response.text.strip()
-    except:
-        return None
-
-async def seslendir_async(metin, ses="tr-TR-EmelNeural"):
-    communicate = edge_tts.Communicate(metin, ses)
-    mp3_fp = io.BytesIO()
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            mp3_fp.write(chunk["data"])
-    mp3_fp.seek(0)
-    return mp3_fp
-
-def metni_oku(metin):
-    try:
-        temiz_metin = metni_temizle_tts_icin(metin)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        ses_dosyasi = loop.run_until_complete(seslendir_async(temiz_metin))
-        return ses_dosyasi
-    except:
-        return None
 
 # ==========================================
 # 4. ARAYÜZ (GİRİŞ)
@@ -198,7 +202,6 @@ if not st.session_state.chat_session:
             else:
                 with st.spinner("Zekai inceliyor... 🚀"):
                     try:
-                        # Oturumu Başlat
                         prompt_content = []
                         system_prompt = f"""
                         Senin adın 'Zekai'. {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
@@ -224,12 +227,12 @@ if not st.session_state.chat_session:
                         
                         st.session_state.messages.append({"role": "assistant", "content": full_text})
                         st.session_state.ilk_karsilama_yapildi = True
-                        st.session_state.aktif_test_verisi = None # Resim incelerken testi kapat
+                        st.session_state.aktif_test_verisi = None
                         
+                        # Seslendirme (Tarayıcı Tabanlı)
                         if st.session_state.ses_aktif:
-                            ses = metni_oku(full_text)
-                            if ses: st.session_state.messages.append({"role": "audio", "content": ses})
-                            st.rerun()
+                            browser_tts(full_text)
+                            
                     except Exception as e:
                         st.error(f"Hata: {e}")
 
@@ -250,7 +253,6 @@ if not st.session_state.chat_session:
         if (btn_interaktif or btn_yazili or btn_konu) and isim and konu_basligi:
             with st.spinner("Zekai içerik hazırlıyor..."):
                 try:
-                    # Oturumu başlat
                     if not st.session_state.chat_session:
                         system_prompt = f"Sen 'Zekai'. {sinif} öğrencisi {isim}'in koçusun. Konumuz: {konu_basligi}."
                         model = genai.GenerativeModel("gemini-flash-latest")
@@ -259,7 +261,7 @@ if not st.session_state.chat_session:
 
                     # 1. TEST MODU (JSON)
                     if btn_interaktif:
-                        st.session_state.aktif_test_verisi = None # Temizle
+                        st.session_state.aktif_test_verisi = None
                         prompt = f"""
                         '{konu_basligi}' konusuyla ilgili {sinif} seviyesinde 5 adet çoktan seçmeli soru hazırla.
                         ÖNEMLİ: Çıktıyı SADECE aşağıdaki JSON formatında ver:
@@ -278,7 +280,7 @@ if not st.session_state.chat_session:
                         
                         st.session_state.aktif_test_verisi = test_data
                         st.session_state.messages.append({"role": "user", "content": f"⚡ **Mod:** {konu_basligi} - İnteraktif Test"})
-                        st.rerun() # Sayfayı yenile ki else bloğuna düşsün ve testi göstersin
+                        st.rerun()
                     
                     # 2. DİĞER MODLAR (STREAMING)
                     else:
@@ -296,6 +298,10 @@ if not st.session_state.chat_session:
                         stream_area.empty()
                         
                         st.session_state.messages.append({"role": "assistant", "content": full_text})
+                        
+                        if st.session_state.ses_aktif:
+                            browser_tts(full_text)
+                            
                         st.rerun()
 
                 except Exception as e:
@@ -307,7 +313,6 @@ if not st.session_state.chat_session:
 # 6. SOHBET VE TEST EKRANI (ELSE BLOĞU)
 # ==========================================
 else:
-    # --- ÜST MENÜ ---
     col_reset, col_dummy = st.columns([1, 2])
     with col_reset:
         if st.button("🔄 Başka Soruya/Konuya Geç", on_click=yeni_soru_yukle, type="secondary"):
@@ -315,14 +320,11 @@ else:
 
     # --- SOHBET GEÇMİŞİ ---
     for message in st.session_state.messages:
-        if message["role"] == "audio":
-            st.audio(message["content"], format="audio/mp3")
-        else:
-            with st.chat_message(message["role"], avatar="🧠" if message["role"] == "assistant" else "👤"):
-                st.markdown(message["content"])
+        with st.chat_message(message["role"], avatar="🧠" if message["role"] == "assistant" else "👤"):
+            st.markdown(message["content"])
 
     # ----------------------------------------------------------------------
-    # İNTERAKTİF TEST GÖSTERİMİ (BURASI KAYBOLMAZ)
+    # İNTERAKTİF TEST GÖSTERİMİ
     # ----------------------------------------------------------------------
     if st.session_state.aktif_test_verisi:
         st.markdown("---")
@@ -330,7 +332,6 @@ else:
         
         for i, soru_data in enumerate(st.session_state.aktif_test_verisi):
             with st.container():
-                # Kart Görünümü
                 st.markdown(f"""
                 <div class="soru-karti">
                     <b>{i+1}. {soru_data['soru']}</b>
@@ -346,7 +347,7 @@ else:
                     label_visibility="collapsed"
                 )
                 
-                # ANINDA DÖNÜT (Seçim yapılır yapılmaz çalışır)
+                # ANINDA DÖNÜT
                 if secim:
                     dogru_mu = (secim == soru_data['dogru_cevap']) or (secim.split(")")[0] == soru_data['dogru_cevap'].split(")")[0])
                     
@@ -394,10 +395,9 @@ else:
             
             st.session_state.messages.append({"role": "assistant", "content": full_response})
             
+            # Konuşma (Tarayıcı Tabanlı)
             if st.session_state.ses_aktif:
-                ses_verisi = metni_oku(full_response)
-                if ses_verisi:
-                    st.audio(ses_verisi, format="audio/mp3", autoplay=True)
-                    st.session_state.messages.append({"role": "audio", "content": ses_verisi})
+                browser_tts(full_response)
+                
         except Exception as e:
             st.error(f"Hata: {e}")
