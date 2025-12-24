@@ -1,16 +1,13 @@
 import streamlit as st
-import streamlit.components.v1 as components  # JavaScript çalıştırmak için gerekli
 import google.generativeai as genai
 from PIL import Image
-import re
 import base64
 import json
-import time
 
 # ==========================================
 # 1. AYARLAR & CSS TASARIMI 🎨
 # ==========================================
-st.set_page_config(page_title="Zekai", page_icon="🧠", layout="centered")
+st.set_page_config(page_title="Dehai", page_icon="🧠", layout="centered")
 
 st.markdown("""
     <style>
@@ -83,37 +80,6 @@ def get_base64_image(image_path):
     except:
         return None
 
-# --- YENİ: TARAYICI TABANLI SESLENDİRME (JAVASCRIPT) ---
-def browser_tts(text, lang='tr-TR'):
-    """
-    Metni tarayıcının yerel ses motorunu kullanarak seslendirir.
-    Maliyet: 0 TL.
-    """
-    # Metindeki tırnak işaretlerini ve yeni satırları temizle (JS hatası olmasın diye)
-    clean_text = text.replace('"', '').replace("'", "").replace("\n", " ")
-    
-    js_code = f"""
-    <script>
-        function speakText() {{
-            // Önceki konuşmayı durdur
-            window.speechSynthesis.cancel();
-            
-            var msg = new SpeechSynthesisUtterance();
-            msg.text = "{clean_text}";
-            msg.lang = "{lang}";
-            msg.rate = 1.0; // Hız
-            msg.pitch = 1.0; // Ton
-            
-            // Konuş
-            window.speechSynthesis.speak(msg);
-        }}
-        // Sayfa yüklendiğinde (veya bu fonksiyon çağrıldığında) çalıştır
-        speakText();
-    </script>
-    """
-    # JS kodunu sayfaya gömüyoruz (Görünmez iframe içinde çalışır)
-    components.html(js_code, height=0, width=0)
-
 def sesi_yaziya_cevir(audio_bytes):
     try:
         model = genai.GenerativeModel("gemini-flash-latest")
@@ -129,7 +95,6 @@ def sesi_yaziya_cevir(audio_bytes):
 if "messages" not in st.session_state: st.session_state.messages = []
 if "chat_session" not in st.session_state: st.session_state.chat_session = None
 if 'kamera_acik' not in st.session_state: st.session_state.kamera_acik = False
-if 'ses_aktif' not in st.session_state: st.session_state.ses_aktif = True
 if 'ilk_karsilama_yapildi' not in st.session_state: st.session_state.ilk_karsilama_yapildi = False
 if 'aktif_test_verisi' not in st.session_state: st.session_state.aktif_test_verisi = None
 
@@ -142,7 +107,8 @@ def yeni_soru_yukle():
 # ==========================================
 # 4. ARAYÜZ (GİRİŞ)
 # ==========================================
-img_base64 = get_base64_image("zekai_logo.png")
+# DİKKAT: Logo dosya adını projenizde de "dehai_logo.png" yapmalısınız.
+img_base64 = get_base64_image("dehai_logo.png") 
 if img_base64:
     st.markdown(
         f"""<div style="text-align: center; margin-bottom: 20px;">
@@ -151,7 +117,7 @@ if img_base64:
         </div>""", unsafe_allow_html=True
     )
 else:
-    st.title("🧠 Zekai")
+    st.title("🧠 Dehai")
     st.markdown("<h3 style='text-align: center; color: #566573;'>Yeni Nesil Zeki Öğrenci Koçu</h3>", unsafe_allow_html=True)
 
 st.info("👇 Önce kendini tanıt, sonra sorunu yükle:")
@@ -161,9 +127,6 @@ with col1:
     isim = st.text_input("Adın ne?", placeholder="Örn: Ali")
 with col2:
     sinif = st.selectbox("Sınıfın kaç?", ["4. Sınıf", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf", "Lise"])
-
-with st.expander("⚙️ Ses Ayarı", expanded=False):
-    st.session_state.ses_aktif = st.toggle("🔊 Zekai Sesli Konuşsun", value=True)
 
 st.markdown("---")
 
@@ -196,15 +159,15 @@ if not st.session_state.chat_session:
         for i, img in enumerate(uploaded_images[:4]):
             cols[i].image(img, width=100, caption=f"Sayfa {i+1}")
 
-        if st.button("🚀 ZEKAİ İNCELE", type="primary"):
+        if st.button("🚀 DEHAİ İNCELE", type="primary"):
             if not isim:
                 st.warning("⚠️ Lütfen adını yaz.")
             else:
-                with st.spinner("Zekai inceliyor... 🚀"):
+                with st.spinner("Dehai inceliyor... 🚀"):
                     try:
                         prompt_content = []
                         system_prompt = f"""
-                        Senin adın 'Zekai'. {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
+                        Senin adın 'Dehai'. {sinif} öğrencisi {isim}'in çalışma arkadaşısın.
                         GÖREVLERİN:
                         1. Dersi/konuyu anla.
                         2. (PUANLAMA) 5+ soru veya yazılı kağıdıysa not ver.
@@ -229,17 +192,13 @@ if not st.session_state.chat_session:
                         st.session_state.ilk_karsilama_yapildi = True
                         st.session_state.aktif_test_verisi = None
                         
-                        # Seslendirme (Tarayıcı Tabanlı)
-                        if st.session_state.ses_aktif:
-                            browser_tts(full_text)
-                            
                     except Exception as e:
                         st.error(f"Hata: {e}")
 
     # --- B) KONUMATİK ---
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("### 🎯 Konumatik: Özel Çalışma Alanı")
-    st.info("Resim yüklemek zorunda değilsin! İstediğin konuyu yaz, Zekai sana özel içerik hazırlasın.")
+    st.info("Resim yüklemek zorunda değilsin! İstediğin konuyu yaz, Dehai sana özel içerik hazırlasın.")
 
     with st.container(border=True):
         konu_basligi = st.text_input("Hangi konuya çalışmak istersin?", placeholder="Örn: Hücre Bölünmesi, Kesirler, Fiilimsiler...")
@@ -251,10 +210,10 @@ if not st.session_state.chat_session:
 
         # İşlemler
         if (btn_interaktif or btn_yazili or btn_konu) and isim and konu_basligi:
-            with st.spinner("Zekai içerik hazırlıyor..."):
+            with st.spinner("Dehai içerik hazırlıyor..."):
                 try:
                     if not st.session_state.chat_session:
-                        system_prompt = f"Sen 'Zekai'. {sinif} öğrencisi {isim}'in koçusun. Konumuz: {konu_basligi}."
+                        system_prompt = f"Sen 'Dehai'. {sinif} öğrencisi {isim}'in koçusun. Konumuz: {konu_basligi}."
                         model = genai.GenerativeModel("gemini-flash-latest")
                         st.session_state.chat_session = model.start_chat(history=[{"role": "user", "parts": [system_prompt]}])
                         st.session_state.ilk_karsilama_yapildi = True
@@ -298,10 +257,6 @@ if not st.session_state.chat_session:
                         stream_area.empty()
                         
                         st.session_state.messages.append({"role": "assistant", "content": full_text})
-                        
-                        if st.session_state.ses_aktif:
-                            browser_tts(full_text)
-                            
                         st.rerun()
 
                 except Exception as e:
@@ -364,7 +319,7 @@ else:
                 st.markdown("<br>", unsafe_allow_html=True)
 
     # --- FOOTER ---
-    st.markdown("""<div class="footer">© Zekai uygulaması <b>Sinan Sayılır</b> tarafından geliştirilmiştir.</div>""", unsafe_allow_html=True)
+    st.markdown("""<div class="footer">© Dehai uygulaması <b>Sinan Sayılır</b> tarafından geliştirilmiştir.</div>""", unsafe_allow_html=True)
 
     # --- INPUT ALANLARI ---
     user_input = None
@@ -395,9 +350,5 @@ else:
             
             st.session_state.messages.append({"role": "assistant", "content": full_response})
             
-            # Konuşma (Tarayıcı Tabanlı)
-            if st.session_state.ses_aktif:
-                browser_tts(full_response)
-                
         except Exception as e:
             st.error(f"Hata: {e}")
