@@ -1,0 +1,15 @@
+name: Uygulamayı Uyandır
+
+on:
+  schedule:
+    # Her 30 dakikada bir çalıştır (Daha sıkı da olabilir ama 30 dk yeterli)
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Manuel tetikleme için
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Siteyi Ziyaret Et
+        run: |
+          curl -I https://dehai.streamlit.app/
