@@ -12,4 +12,4 @@ jobs:
     steps:
       - name: Siteyi Ziyaret Et
         run: |
-          curl -I https://dehai.streamlit.app/
+          curl -I https://kafadar.streamlit.app/
